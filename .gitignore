@@ -1,7 +1,10 @@
 node_modules
 dist
-.vercel
 .DS_Store
+
+# Downloaded by scripts/setup-assets.mjs
+public/mediapipe-wasm/
+public/models/
 
 # Secrets: never commit
 .env

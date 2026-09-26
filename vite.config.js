@@ -1,8 +1,8 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Serves api/*.js at /api/* during `npm run dev`, so the same files work
-// locally and as Vercel functions (export async function GET/POST(request)).
+// Serves api/*.js at /api/* during `npm run dev` only (export async function GET/POST(request)).
+// The deployed site is static (GitHub Pages), so these endpoints do not exist in production.
 function apiRoutes() {
   return {
     name: 'api-routes',
@@ -42,5 +42,10 @@ function apiRoutes() {
 export default defineConfig(({ mode }) => {
   // Expose .env (including non-VITE_ keys) to api/ handlers via process.env.
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
-  return { plugins: [react(), apiRoutes()] };
+  return {
+    plugins: [react(), apiRoutes()],
+    // Relative base so the static build works under /SHD/ on GitHub Pages.
+    base: './',
+    test: { include: ['tests/**/*.test.ts'] },
+  };
 });
