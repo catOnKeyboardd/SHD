@@ -8,6 +8,7 @@ export async function POST(request) {
   form.append('file', audio, 'speech.webm');
   form.append('model_id', 'scribe_v2');
   form.append('language_code', lang);
+  form.append('tag_audio_events', 'false'); // no "[background chatter]" tags
 
   const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',
