@@ -1,0 +1,31 @@
+{
+  "_comment": "All clinical cut-offs live here so they can be reviewed without touching code. Adult patients only.",
+  "critical": {
+    "_comment": "Suspected ESI 1: call for immediate help.",
+    "heartRateBelow": 40,
+    "heartRateAbove": 150,
+    "respirationBelow": 8,
+    "respirationAbove": 36
+  },
+  "dangerZone": {
+    "_comment": "ESI decision point D (adult): consider ESI 2.",
+    "heartRateAbove": 100,
+    "respirationAbove": 20
+  },
+  "observation": {
+    "eyeClosedBlendshape": 0.55,
+    "perclosReduced": 0.4,
+    "perclosUnresponsive": 0.85,
+    "gazeResponseMin": 0.18,
+    "gazeReactionDelayMs": 400,
+    "painSevereScore": 1.1,
+    "painMinOpenEyeShare": 0.3,
+    "smileMinLift": 0.035,
+    "smileAsymmetryPositive": 0.5,
+    "smileSettleMs": 700
+  },
+  "quality": {
+    "minFaceCoverage": 0.7,
+    "minFps": 15
+  }
+}
