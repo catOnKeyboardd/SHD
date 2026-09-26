@@ -201,9 +201,17 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
 
   (async () => {
     emit({ instruction: 'Loading…' });
+    let cameraStage = false;
     try {
-      const lm = await loadLandmarkers();
+      const lm = await loadLandmarkers((p) => {
+        if (stopped) return;
+        emit({
+          instruction:
+            p.stage === 'download' ? `Downloading AI models… ${Math.round(p.fraction * 100)}%` : 'Preparing AI models…',
+        });
+      });
       if (stopped) return;
+      cameraStage = true;
       emit({ instruction: 'Starting camera…' });
       const s = await startCamera(video);
       if (stopped) return stopStream(s);
@@ -222,7 +230,7 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
       emit({
         instruction: denied
           ? 'Camera permission was denied. Allow camera access in the browser settings, then reload.'
-          : `Could not start the camera: ${(err as Error).message ?? err}`,
+          : `${cameraStage ? 'Could not start the camera' : 'Could not load the AI models'}: ${(err as Error).message ?? err}`,
       });
     }
   })();
