@@ -320,7 +320,7 @@ export class Pipeline {
       heartRate: recent(this.lastHeartRate, elapsedMs),
       respiration: recent(this.lastRespiration, elapsedMs),
       alertness: observing ? assessAlertness(obs, frames.length) : { state: 'unknown', debug: warmingUp },
-      pain: observing ? assessPain(obs) : { severe: false, assessable: false, debug: warmingUp },
+      pain: observing ? assessPain(obs) : { score: 0, assessable: false, debug: warmingUp },
       quality: {
         faceCoverage: frames.length ? faceFrames / frames.length : 0,
         meanFps: spanMs > 0 ? frames.length / (spanMs / 1000) : 0,

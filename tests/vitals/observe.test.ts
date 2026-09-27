@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { assessAlertness } from '../../src/vitals/observe/alertness';
 import type { FaceObservation } from '../../src/vitals/observe/frames';
-import { assessPain } from '../../src/vitals/observe/pain';
+import { assessPain, toPainScale } from '../../src/vitals/observe/pain';
 
 const FRAME_MS = 33;
 
@@ -38,28 +38,40 @@ describe('alertness', () => {
 });
 
 describe('pain expression', () => {
-  it('neutral face is not severe', () => {
-    const r = assessPain(frames(10_000, { eyeBlinkLeft: 0.1, eyeBlinkRight: 0.1, eyeSquintLeft: 0.2, eyeSquintRight: 0.2 }));
+  const neutral = { eyeBlinkLeft: 0.1, eyeBlinkRight: 0.1, eyeSquintLeft: 0.2, eyeSquintRight: 0.2 };
+  const grimace = {
+    browDownLeft: 0.6,
+    browDownRight: 0.6,
+    eyeSquintLeft: 0.6,
+    eyeSquintRight: 0.6,
+    noseSneerLeft: 0.4,
+    noseSneerRight: 0.4,
+  };
+
+  it('neutral face scores near 0', () => {
+    const r = assessPain(frames(10_000, neutral));
     expect(r.assessable).toBe(true);
-    expect(r.severe).toBe(false);
+    expect(r.score).toBe(0.4);
   });
 
-  it('sustained grimace is flagged', () => {
-    const grimace = {
-      browDownLeft: 0.6,
-      browDownRight: 0.6,
-      eyeSquintLeft: 0.6,
-      eyeSquintRight: 0.6,
-      noseSneerLeft: 0.4,
-      noseSneerRight: 0.4,
-    };
-    expect(assessPain(frames(10_000, grimace)).severe).toBe(true);
+  it('raw score maps onto 0-10 with one decimal, aligned with NRS bands', () => {
+    expect([0, 0.25, 0.5, 0.65, 0.8, 1.1, 1.6, 2.0, 3.0].map(toPainScale)).toEqual([0, 0.5, 1, 2.5, 4, 7, 8.7, 10, 10]);
   });
 
-  it('closed eyes are not scored as pain, and say why', () => {
+  it('sustained grimace is severe', () => {
+    expect(assessPain(frames(10_000, grimace)).score).toBeGreaterThanOrEqual(7);
+  });
+
+  it('follows a new expression within a few seconds', () => {
+    const then = frames(17_000, neutral);
+    const now = frames(3_000, grimace).map((o) => ({ ...o, t: o.t + 17_000 }));
+    expect(assessPain([...then, ...now]).score).toBeGreaterThanOrEqual(7);
+  });
+
+  it('closed eyes are not scored as pain: default 0, and say why', () => {
     const r = assessPain(frames(10_000, { ...closed, browDownLeft: 0.8, browDownRight: 0.8 }));
     expect(r.assessable).toBe(false);
-    expect(r.severe).toBe(false);
+    expect(r.score).toBe(0);
     expect(r.debug.reason).toBe('eyes judged closed');
     expect(r.debug.openShare).toBe(0);
     expect(r.debug.blinkMedian).toBe(0.9);

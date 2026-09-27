@@ -56,7 +56,7 @@ computePriority(vitals, baseline, ai) → { level: 'green' | 'yellow' | 'red', r
 
 - Heart rate: forehead and cheek regions → skin filter → POS rPPG → spectral peak, with SNR-based confidence.
 - Respiration: shoulder motion (pose landmarks) fused with forehead intensity.
-- Observations from face blendshapes: consciousness (eye closure) and pain expression.
+- Observations from face blendshapes: consciousness (eye closure) and pain expression, shown as 0–10 with one decimal from the last 3 s of open-eye frames (0 is also the default when the face cannot be assessed; 7 or more raises urgency).
 - Flow: positioning checks → continuous monitoring over the latest 20 s. No face for 5 s resets for the next patient.
 - Heart rate and respiration show the latest estimate even at low confidence, and keep it for up to 15 s when no new one can be made; only confident readings are used for triage.
 - Confidence (0–100 %) starts low and rises quickly over the first 15 s, scaled by signal quality. Urgency is shown in plain words (Emergency / Urgent / Routine) after 5 s; it says Unclear only when, after 30 s, the face was visible in under half the frames or the video runs below 10 fps.

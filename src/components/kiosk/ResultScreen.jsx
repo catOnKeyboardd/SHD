@@ -1,5 +1,7 @@
 // Live result tiles for the patient being measured (names and numbers only).
 // Add ?debug to the URL to see the numbers behind the readings, consciousness and pain.
+import thresholds from '../../vitals/triage/thresholds.json';
+
 const URGENCY = {
   emergency: ['Emergency', 'Get help now', 'urgency-emergency'],
   urgent: ['Urgent', 'See a nurse soon', 'urgency-urgent'],
@@ -9,6 +11,7 @@ const CHECKING = ['Checking…', 'Please stay still', 'urgency-pending'];
 const UNCLEAR = ['Unclear', 'Please ask a nurse', 'urgency-pending'];
 
 const showDebug = new URLSearchParams(window.location.search).has('debug');
+const PAIN_ALARM = thresholds.observation.painModerate;
 
 function Tile({ name, value, unit, alarm }) {
   return (
@@ -76,7 +79,12 @@ export default function ResultScreen({ vitals }) {
         <Tile name="Heart rate" value={vitals.hr ?? none} unit={vitals.hr && 'bpm'} />
         <Tile name="Respiration" value={vitals.rr ?? none} unit={vitals.rr && '/min'} />
         <Tile name="Consciousness" value={vitals.consciousness ? cap(vitals.consciousness) : none} />
-        <Tile name="Pain" value={vitals.pain ? cap(vitals.pain) : none} alarm={vitals.pain === 'severe'} />
+        <Tile
+          name="Pain"
+          value={vitals.pain === null ? none : vitals.pain.toFixed(1)}
+          unit={vitals.pain !== null && '/10'}
+          alarm={vitals.pain >= PAIN_ALARM}
+        />
       </div>
       {showDebug && <Debug debug={vitals.debug} />}
     </section>

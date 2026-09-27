@@ -11,7 +11,7 @@ function baseline(overrides: Partial<MeasurementResult> = {}): MeasurementResult
     heartRate: reading(78),
     respiration: reading(16),
     alertness: { state: 'alert', debug: {} },
-    pain: { severe: false, assessable: true, debug: {} },
+    pain: { score: 0.8, assessable: true, debug: {} },
     quality: { faceCoverage: 0.98, meanFps: 29 },
     ...overrides,
   };
@@ -37,9 +37,13 @@ describe('triage engine', () => {
     ['danger-zone respiration', { respiration: reading(24) }],
     ['respiratory distress', { respiration: reading(32) }],
     ['reduced alertness', { alertness: { state: 'reduced' as const, debug: {} } }],
-    ['severe pain expression', { pain: { severe: true, assessable: true, debug: {} } }],
+    ['severe pain expression', { pain: { score: 7.4, assessable: true, debug: {} } }],
   ])('%s → ESI 2', (_, o) => {
     expect(triage(baseline(o))).toBe(2);
+  });
+
+  it('moderate pain alone does not escalate', () => {
+    expect(triage(baseline({ pain: { score: 5.5, assessable: true, debug: {} } }))).toBe('nurse');
   });
 
   it('ignores extreme values from low-confidence readings', () => {

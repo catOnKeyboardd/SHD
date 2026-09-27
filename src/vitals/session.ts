@@ -35,7 +35,8 @@ export interface VitalsUpdate {
   /** Camera-only triage suggestion; null while still checking or when the face is barely visible. */
   urgency: Urgency;
   consciousness: 'alert' | 'reduced' | 'unresponsive' | null;
-  pain: 'none' | 'severe' | null;
+  /** Expression-based pain, 0..10 with one decimal; 0 when it cannot be assessed; null only in the first seconds. */
+  pain: number | null;
   /** Past `PROTOCOL.unclearAfterMs`; a null urgency now means the data is too poor to judge. */
   settled: boolean;
   /** Numbers behind the readings and observations, for troubleshooting. */
@@ -87,7 +88,7 @@ function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): V
     confidence: overallConfidence(m, elapsedMs),
     urgency: elapsedMs < PROTOCOL.minObservationMs ? null : urgencyOf(triage(m)),
     consciousness: state === 'unknown' ? null : state,
-    pain: m.pain.assessable ? (m.pain.severe ? 'severe' : 'none') : null,
+    pain: elapsedMs < PROTOCOL.minObservationMs ? null : m.pain.score,
     settled: elapsedMs >= PROTOCOL.unclearAfterMs,
     debug: {
       vitals: {

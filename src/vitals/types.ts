@@ -25,7 +25,8 @@ export interface AlertnessResult {
 }
 
 export interface PainResult {
-  severe: boolean;
+  /** 0..10 with one decimal; 0 is also the default when the expression cannot be assessed. */
+  score: number;
   assessable: boolean;
   debug: Diagnostics;
 }

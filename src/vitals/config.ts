@@ -14,6 +14,8 @@ export const PROTOCOL = {
   vitalsHoldMs: 15_000,
   /** Face data needed before eye closure and pain are judged. */
   minObservationMs: 5_000,
+  /** The pain score uses only this most recent stretch so it follows expression changes. */
+  painRecentMs: 3_000,
   /** Quality gate must pass continuously this long before measurement auto-starts. */
   gateHoldMs: 1_500,
   /** Pose inference interval; respiration needs far less than video rate. */

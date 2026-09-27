@@ -32,7 +32,7 @@ export function triage(m: MeasurementResult): TriageLevel {
 
   const highRisk =
     m.alertness.state === 'reduced' ||
-    m.pain.severe ||
+    m.pain.score >= thresholds.observation.painSevere ||
     (hr !== null && hr > D.heartRateAbove) ||
     (rr !== null && rr > D.respirationAbove);
   if (highRisk) return 2;

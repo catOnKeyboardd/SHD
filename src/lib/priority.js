@@ -1,6 +1,8 @@
 // Owner: dashboard/logic
 // computePriority(vitals, baseline, ai) → { level: 'green'|'yellow'|'red', reasons: [] }
 // Rules decide; the AI's suggested_level may raise the level but never lower it.
+import thresholds from '../vitals/triage/thresholds.json';
+
 const RANK = { green: 0, yellow: 1, red: 2 };
 
 export function computePriority(vitals, baseline, ai) {
@@ -21,7 +23,9 @@ export function computePriority(vitals, baseline, ai) {
     if (vitals.consciousness === 'reduced' || vitals.consciousness === 'unresponsive') {
       reasons.push(`Consciousness ${vitals.consciousness}`);
     }
-    if (vitals.pain === 'severe') reasons.push('Severe pain expression');
+    if (vitals.pain !== null && vitals.pain >= thresholds.observation.painModerate) {
+      reasons.push(`Pain expression ${vitals.pain.toFixed(1)}/10`);
+    }
 
     if (baseline?.hr && vitals.hr !== null && vitals.hr - baseline.hr >= 20) {
       raise('yellow', `Heart rate up ${vitals.hr - baseline.hr} from arrival`);
