@@ -1,5 +1,5 @@
 // Live result tiles for the patient being measured (names and numbers only).
-// Add ?debug to the URL to see the numbers behind consciousness, pain and smile.
+// Add ?debug to the URL to see the numbers behind the readings, consciousness and pain.
 const URGENCY = {
   emergency: ['Emergency', 'Get help now', 'urgency-emergency'],
   urgent: ['Urgent', 'See a nurse soon', 'urgency-urgent'],
@@ -77,11 +77,6 @@ export default function ResultScreen({ vitals }) {
         <Tile name="Respiration" value={vitals.rr ?? none} unit={vitals.rr && '/min'} />
         <Tile name="Consciousness" value={vitals.consciousness ? cap(vitals.consciousness) : none} />
         <Tile name="Pain" value={vitals.pain ? cap(vitals.pain) : none} alarm={vitals.pain === 'severe'} />
-        <Tile
-          name="Smile"
-          value={vitals.facialDroop ? cap(vitals.facialDroop) : none}
-          alarm={vitals.facialDroop === 'asymmetric'}
-        />
       </div>
       {showDebug && <Debug debug={vitals.debug} />}
     </section>

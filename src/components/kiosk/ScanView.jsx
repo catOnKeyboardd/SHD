@@ -1,4 +1,4 @@
-// Owner: vitals. Camera preview, prompts and positioning checks.
+// Owner: vitals. Camera preview, instructions and positioning checks.
 // The scan starts on mount and keeps monitoring until unmount.
 import { useEffect, useRef, useState } from 'react';
 import { startScan } from '../../lib/vitals.js';
@@ -34,7 +34,7 @@ export default function ScanView({ onVitals = () => {} }) {
       <div className="stage">
         <video ref={videoRef} playsInline muted autoPlay />
         <canvas ref={overlayRef} />
-        <div className={`instruction${status.phase === 'smile' ? ' prompt' : ''}`}>{status.instruction}</div>
+        <div className="instruction">{status.instruction}</div>
       </div>
 
       {status.phase === 'positioning' && (

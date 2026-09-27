@@ -1,13 +1,12 @@
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { PROTOCOL } from '../config';
 import { assessAlertness } from '../observe/alertness';
-import { assessFacialDroop } from '../observe/facialDroop';
-import { inRange, type FaceObservation } from '../observe/frames';
+import type { FaceObservation } from '../observe/frames';
 import { assessPain } from '../observe/pain';
 import type { TimedValue } from '../signals/dsp';
 import { estimateHeartRate } from '../signals/heartRate';
 import { estimateRespiration } from '../signals/respiration';
-import type { FacialDroopResult, MeasurementResult, Reading, RoiFrame } from '../types';
+import type { MeasurementResult, Reading, RoiFrame } from '../types';
 import type { Landmarkers } from '../vision/landmarkers';
 import thresholds from '../triage/thresholds.json';
 import { roiPixelPolygons, sampleRois } from './roi';
@@ -26,15 +25,11 @@ export interface FrameInfo {
   gate: GateStatus;
   recording: boolean;
   elapsedMs: number;
-  /** Prompt the patient should be following right now. */
-  prompt: 'smile' | null;
 }
 
 interface FrameRecord {
   t: number;
   face: boolean;
-  /** No prompt was running during this frame. */
-  passive: boolean;
   moving: boolean;
   brightnessJump: boolean;
 }
@@ -66,23 +61,10 @@ function recent(last: TimedReading | null, now: number): Reading | null {
   return last && now - last.t <= PROTOCOL.vitalsHoldMs ? last.reading : null;
 }
 
-interface SmileCheck {
-  attempts: number;
-  /** Elapsed time at which the next prompt may start. */
-  nextAt: number;
-  /** Elapsed time the running prompt started, or null when none is running. */
-  promptStart: number | null;
-  result: FacialDroopResult | null;
-}
-
 /**
  * Per-frame processing loop: runs the landmarkers, evaluates the positioning
  * gate and, while recording, accumulates the raw traces the estimators need.
- *
- * Recording is continuous: vitals, eye closure and pain are recomputed over
- * the latest `PROTOCOL.windowMs`. Once enough resting data exists the patient
- * is asked to smile; the prompt repeats until the smile can be assessed or
- * `PROTOCOL.smileMaxAttempts` is reached.
+ * Vitals, eye closure and pain are recomputed over the latest `PROTOCOL.windowMs`.
  */
 export class Pipeline {
   onFrame: (info: FrameInfo) => void = () => {};
@@ -104,9 +86,6 @@ export class Pipeline {
   private startT = 0;
   private lastResultT = 0;
   private lastFaceT = 0;
-  private smile: SmileCheck = { attempts: 0, nextAt: 0, promptStart: null, result: null };
-  /** Start of the uninterrupted passive stretch the vitals are computed from. */
-  private vitalsStart = 0;
   /** Latest estimates, reused for up to `PROTOCOL.vitalsHoldMs` when a new one cannot be made. */
   private lastHeartRate: TimedReading | null = null;
   private lastRespiration: TimedReading | null = null;
@@ -145,8 +124,6 @@ export class Pipeline {
     this.lastNose = null;
     this.lastLum = null;
     this.lastResultT = 0;
-    this.smile = { attempts: 0, nextAt: PROTOCOL.smileFirstPromptMs, promptStart: null, result: null };
-    this.vitalsStart = 0;
     this.lastHeartRate = null;
     this.lastRespiration = null;
     this.startT = performance.now();
@@ -218,11 +195,9 @@ export class Pipeline {
     let distance: GateStatus['distance'] = null;
     let centered = false;
     let iod = 0;
-    let eyeL: Pt = { x: 0, y: 0 };
-    let eyeR: Pt = { x: 0, y: 0 };
     if (face) {
-      eyeL = mid(px(33), px(133));
-      eyeR = mid(px(362), px(263));
+      const eyeL = mid(px(33), px(133));
+      const eyeR = mid(px(362), px(263));
       iod = Math.hypot(eyeR.x - eyeL.x, eyeR.y - eyeL.y);
       const ratio = iod / w;
       distance = ratio < 0.05 ? 'far' : ratio > 0.2 ? 'near' : 'ok';
@@ -252,39 +227,13 @@ export class Pipeline {
         this.onPatientLeft();
         return;
       }
-      this.updateSmilePrompt(elapsed, !!face);
-      this.record(elapsed, face, blend, rois, iod, eyeL, eyeR, px, sh, poseRan, w, h);
+      this.record(elapsed, face, blend, rois, iod, px, sh, poseRan, w, h);
       this.prune(elapsed);
     }
 
     this.draw(face, sh, w, h, gate.ok);
-    const prompt = this.recording && this.smile.promptStart !== null ? 'smile' : null;
-    this.onFrame({ gate, recording: this.recording, elapsedMs: elapsed, prompt });
+    this.onFrame({ gate, recording: this.recording, elapsedMs: elapsed });
     if (this.recording) this.maybeEmit(elapsed);
-  }
-
-  /** Starts a smile prompt when due, and scores it once it has run its course. */
-  private updateSmilePrompt(elapsed: number, face: boolean): void {
-    const s = this.smile;
-    if (s.promptStart === null) {
-      const due = !s.result?.assessable && s.attempts < PROTOCOL.smileMaxAttempts && elapsed >= s.nextAt;
-      if (due && face) {
-        s.promptStart = elapsed;
-        s.attempts++;
-      }
-      return;
-    }
-    const start = s.promptStart;
-    if (elapsed - start < PROTOCOL.smilePromptMs) return;
-
-    const rest = this.faceObs.filter((o) => o.passive && inRange(o, [start - PROTOCOL.smileFirstPromptMs, start]));
-    const smiling = this.faceObs.filter((o) =>
-      inRange(o, [start + PROTOCOL.smileSettleMs, start + PROTOCOL.smilePromptMs]),
-    );
-    s.result = assessFacialDroop(rest, smiling);
-    s.promptStart = null;
-    s.nextAt = elapsed + PROTOCOL.smileRetryMs;
-    this.vitalsStart = elapsed;
   }
 
   private maybeEmit(elapsed: number): void {
@@ -308,19 +257,16 @@ export class Pipeline {
     blend: Record<string, number>,
     rois: ReturnType<typeof sampleRois>,
     iod: number,
-    eyeL: Pt,
-    eyeR: Pt,
     px: (i: number) => Pt,
     sh: { l: NormalizedLandmark; r: NormalizedLandmark } | null,
     poseRan: boolean,
     w: number,
     h: number,
   ): void {
-    const passive = this.smile.promptStart === null;
-    const rec: FrameRecord = { t, face: false, passive, moving: false, brightnessJump: false };
+    const rec: FrameRecord = { t, face: false, moving: false, brightnessJump: false };
     this.frameLog.push(rec);
 
-    if (poseRan && sh && passive) {
+    if (poseRan && sh) {
       const width = Math.abs(sh.l.x - sh.r.x) * w;
       if (width > 1) this.shoulderY.push({ t, v: (((sh.l.y + sh.r.y) / 2) * h) / width });
     }
@@ -333,86 +279,52 @@ export class Pipeline {
       if (s && s.skinRatio >= MIN_SKIN_RATIO) frame.rois[name as keyof typeof rois] = s.rgb;
     }
 
-    if (passive) {
-      this.roiFrames.push(frame);
-      const lum = rois.forehead?.luminance;
-      if (lum !== undefined) {
-        this.foreheadLum.push({ t, v: lum });
-        rec.brightnessJump = this.lastLum !== null && Math.abs(lum - this.lastLum) / this.lastLum > 0.06;
-        this.lastLum = lum;
-      }
-      const nose = px(1);
-      rec.moving = !!this.lastNose && Math.hypot(nose.x - this.lastNose.x, nose.y - this.lastNose.y) / iod > 0.012;
-      this.lastNose = nose;
-    } else {
-      this.lastNose = null;
-      this.lastLum = null;
+    this.roiFrames.push(frame);
+    const lum = rois.forehead?.luminance;
+    if (lum !== undefined) {
+      this.foreheadLum.push({ t, v: lum });
+      rec.brightnessJump = this.lastLum !== null && Math.abs(lum - this.lastLum) / this.lastLum > 0.06;
+      this.lastLum = lum;
     }
+    const nose = px(1);
+    rec.moving = !!this.lastNose && Math.hypot(nose.x - this.lastNose.x, nose.y - this.lastNose.y) / iod > 0.012;
+    this.lastNose = nose;
 
-    // Mouth corners in a frame rotated so the eye line is horizontal.
-    const angle = Math.atan2(eyeR.y - eyeL.y, eyeR.x - eyeL.x);
-    const centre = mid(eyeL, eyeR);
-    const alignedY = (p: Pt) => (-Math.sin(angle) * (p.x - centre.x) + Math.cos(angle) * (p.y - centre.y)) / iod;
-    this.faceObs.push({ t, blend, cornerA: alignedY(px(61)), cornerB: alignedY(px(291)), passive });
+    this.faceObs.push({ t, blend });
   }
 
   /** Result for the latest `PROTOCOL.windowMs` (arrays are already pruned to it). */
   private snapshot(elapsedMs: number): MeasurementResult {
-    const vitalsFrom = Math.max(elapsedMs - PROTOCOL.windowMs, this.vitalsStart);
-    const sinceVitalsStart = <T extends { t: number }>(arr: T[]) => arr.filter((x) => x.t >= vitalsFrom);
-
     const frames = this.frameLog;
-    const passive = frames.filter((f) => f.passive);
-    const vitalsFrames = sinceVitalsStart(passive).filter((f) => f.face);
-    const faceFrames = frames.filter((f) => f.face).length;
+    const faceRecords = frames.filter((f) => f.face);
+    const faceFrames = faceRecords.length;
 
-    const motionScore = vitalsFrames.length ? vitalsFrames.filter((f) => f.moving).length / vitalsFrames.length : 1;
-    const brightnessJumps = vitalsFrames.filter((f) => f.brightnessJump).length;
+    const motionScore = faceFrames ? faceRecords.filter((f) => f.moving).length / faceFrames : 1;
+    const brightnessJumps = faceRecords.filter((f) => f.brightnessJump).length;
     const qualityFactor = Math.max(
       0.3,
       1 - Math.max(0, motionScore - 0.15) * 1.5 - Math.min(0.3, brightnessJumps * 0.05),
     );
     const spanMs = Math.min(elapsedMs, PROTOCOL.windowMs);
 
-    const hr = estimateHeartRate(sinceVitalsStart(this.roiFrames), qualityFactor);
-    const rr = estimateRespiration(sinceVitalsStart(this.shoulderY), sinceVitalsStart(this.foreheadLum), qualityFactor);
+    const hr = estimateHeartRate(this.roiFrames, qualityFactor);
+    const rr = estimateRespiration(this.shoulderY, this.foreheadLum, qualityFactor);
     if (hr) this.lastHeartRate = { reading: hr, t: elapsedMs };
     if (rr) this.lastRespiration = { reading: rr, t: elapsedMs };
-    const heartRate = recent(this.lastHeartRate, elapsedMs);
-    const respiration = recent(this.lastRespiration, elapsedMs);
 
-    const rest = this.faceObs.filter((o) => o.passive);
-    const warmingUp = { reason: 'collecting data', frames: rest.length };
+    const obs = this.faceObs;
+    const warmingUp = { reason: 'collecting data', frames: obs.length };
     const observing = elapsedMs >= PROTOCOL.minObservationMs;
 
     return {
-      heartRate,
-      respiration,
-      alertness: observing ? assessAlertness(rest, passive.length) : { state: 'unknown', debug: warmingUp },
-      pain: observing ? assessPain(rest) : { severe: false, assessable: false, debug: warmingUp },
-      facialDroop: this.facialDroopStatus(),
+      heartRate: recent(this.lastHeartRate, elapsedMs),
+      respiration: recent(this.lastRespiration, elapsedMs),
+      alertness: observing ? assessAlertness(obs, frames.length) : { state: 'unknown', debug: warmingUp },
+      pain: observing ? assessPain(obs) : { severe: false, assessable: false, debug: warmingUp },
       quality: {
         faceCoverage: frames.length ? faceFrames / frames.length : 0,
         meanFps: spanMs > 0 ? frames.length / (spanMs / 1000) : 0,
       },
-    };
-  }
-
-  private facialDroopStatus(): FacialDroopResult {
-    const s = this.smile;
-    if (s.result?.assessable) return { ...s.result, debug: { ...s.result.debug, attempts: s.attempts } };
-    const reason =
-      s.promptStart !== null
-        ? 'smile prompt running'
-        : s.attempts === 0
-          ? 'waiting for first prompt'
-          : s.attempts >= PROTOCOL.smileMaxAttempts
-            ? `gave up: ${s.result?.debug.reason}`
-            : `retrying: ${s.result?.debug.reason}`;
-    return {
-      positive: false,
-      assessable: false,
-      debug: { ...s.result?.debug, reason, attempts: s.attempts },
     };
   }
 

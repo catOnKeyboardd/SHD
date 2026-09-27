@@ -30,17 +30,10 @@ export interface PainResult {
   debug: Diagnostics;
 }
 
-export interface FacialDroopResult {
-  positive: boolean;
-  assessable: boolean;
-  debug: Diagnostics;
-}
-
 export interface MeasurementResult {
   heartRate: Reading | null;
   respiration: Reading | null;
   alertness: AlertnessResult;
   pain: PainResult;
-  facialDroop: FacialDroopResult;
   quality: { faceCoverage: number; meanFps: number };
 }

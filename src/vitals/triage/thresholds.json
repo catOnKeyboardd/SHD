@@ -17,9 +17,7 @@
     "perclosReduced": 0.4,
     "perclosUnresponsive": 0.85,
     "painSevereScore": 1.1,
-    "painMinOpenEyeShare": 0.3,
-    "smileMinLift": 0.035,
-    "smileAsymmetryPositive": 0.5
+    "painMinOpenEyeShare": 0.3
   },
   "quality": {
     "_comment": "minFps gates the start of a measurement; below the unclear* values the result is 'Unclear' instead of 'Routine'.",

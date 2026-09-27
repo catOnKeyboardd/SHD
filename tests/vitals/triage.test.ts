@@ -12,7 +12,6 @@ function baseline(overrides: Partial<MeasurementResult> = {}): MeasurementResult
     respiration: reading(16),
     alertness: { state: 'alert', debug: {} },
     pain: { severe: false, assessable: true, debug: {} },
-    facialDroop: { positive: false, assessable: true, debug: {} },
     quality: { faceCoverage: 0.98, meanFps: 29 },
     ...overrides,
   };
@@ -39,7 +38,6 @@ describe('triage engine', () => {
     ['respiratory distress', { respiration: reading(32) }],
     ['reduced alertness', { alertness: { state: 'reduced' as const, debug: {} } }],
     ['severe pain expression', { pain: { severe: true, assessable: true, debug: {} } }],
-    ['facial droop', { facialDroop: { positive: true, assessable: true, debug: {} } }],
   ])('%s → ESI 2', (_, o) => {
     expect(triage(baseline(o))).toBe(2);
   });

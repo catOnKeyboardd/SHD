@@ -5,7 +5,7 @@
 //
 // onVitals is called about once a second while a patient is being measured:
 //   { sessionId, hr, rr, hrv: null, stress: null, bp: null, confidence: 0..1,
-//     urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, facialDroop, settled, debug }
+//     urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, settled, debug }
 // hr / rr show the latest estimate at any confidence (null only before the first one);
 // hrv, stress and bp are not measurable with this method.
 // confidence starts low and rises over the first 15 s as data accumulates.

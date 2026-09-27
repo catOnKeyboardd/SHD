@@ -76,10 +76,6 @@
   color: var(--ok);
 }
 
-.instruction.prompt {
-  color: var(--warn);
-}
-
 .summary {
   width: min(720px, 100%);
   display: flex;

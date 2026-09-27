@@ -1,20 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { assessAlertness } from '../../src/vitals/observe/alertness';
-import { assessFacialDroop } from '../../src/vitals/observe/facialDroop';
 import type { FaceObservation } from '../../src/vitals/observe/frames';
 import { assessPain } from '../../src/vitals/observe/pain';
 
 const FRAME_MS = 33;
 
-/** `ms` of frames with fixed blendshapes and mouth-corner heights. */
-function frames(
-  ms: number,
-  blend: Record<string, number> = {},
-  corners: [number, number] = [0.9, 0.9],
-  passive = true,
-): FaceObservation[] {
+/** `ms` of frames with fixed blendshapes. */
+function frames(ms: number, blend: Record<string, number> = { eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 }) {
   const out: FaceObservation[] = [];
-  for (let t = 0; t < ms; t += FRAME_MS) out.push({ t, blend, cornerA: corners[0], cornerB: corners[1], passive });
+  for (let t = 0; t < ms; t += FRAME_MS) out.push({ t, blend });
   return out;
 }
 
@@ -45,7 +39,7 @@ describe('alertness', () => {
 
 describe('pain expression', () => {
   it('neutral face is not severe', () => {
-    const r = assessPain(frames(10_000, { eyeSquintLeft: 0.2, eyeSquintRight: 0.2 }));
+    const r = assessPain(frames(10_000, { eyeBlinkLeft: 0.1, eyeBlinkRight: 0.1, eyeSquintLeft: 0.2, eyeSquintRight: 0.2 }));
     expect(r.assessable).toBe(true);
     expect(r.severe).toBe(false);
   });
@@ -68,30 +62,12 @@ describe('pain expression', () => {
     expect(r.severe).toBe(false);
     expect(r.debug.reason).toBe('eyes judged closed');
     expect(r.debug.openShare).toBe(0);
-  });
-});
-
-describe('facial droop (smile symmetry)', () => {
-  it('symmetric smile is negative', () => {
-    const r = assessFacialDroop(rest, frames(3_000, { mouthSmileLeft: 0.7, mouthSmileRight: 0.7 }, [0.8, 0.8], false));
-    expect(r.assessable).toBe(true);
-    expect(r.positive).toBe(false);
+    expect(r.debug.blinkMedian).toBe(0.9);
   });
 
-  it('one-sided smile is positive', () => {
-    const r = assessFacialDroop(rest, frames(3_000, { mouthSmileLeft: 0.7, mouthSmileRight: 0.15 }, [0.8, 0.89], false));
-    expect(r.positive).toBe(true);
-  });
-
-  it('no smile attempt is not assessable, and says why', () => {
-    const r = assessFacialDroop(rest, frames(3_000, {}, [0.9, 0.9], false));
+  it('missing blendshapes are reported as such', () => {
+    const r = assessPain(frames(10_000, {}));
     expect(r.assessable).toBe(false);
-    expect(r.positive).toBe(false);
-    expect(r.debug.reason).toBe('no smile detected');
-  });
-
-  it('too few resting frames is not assessable', () => {
-    const r = assessFacialDroop(rest.slice(0, 5), frames(3_000, {}, [0.8, 0.8], false));
-    expect(r.debug.reason).toBe('too few face frames');
+    expect(r.debug.reason).toBe('no blendshapes from MediaPipe');
   });
 });

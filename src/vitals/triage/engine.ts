@@ -32,7 +32,6 @@ export function triage(m: MeasurementResult): TriageLevel {
 
   const highRisk =
     m.alertness.state === 'reduced' ||
-    m.facialDroop.positive ||
     m.pain.severe ||
     (hr !== null && hr > D.heartRateAbove) ||
     (rr !== null && rr > D.respirationAbove);

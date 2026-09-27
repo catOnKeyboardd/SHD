@@ -1,13 +1,13 @@
 import { lockExposure, startCamera, stopStream } from './capture/camera';
 import { Pipeline, type FrameInfo, type GateStatus } from './capture/pipeline';
 import { PROTOCOL } from './config';
+import { createPainLogger } from './debugLog';
 import { speak, stopSpeaking } from './speech';
 import { overallConfidence, triage, urgencyOf, type Urgency } from './triage/engine';
 import type { Diagnostics, MeasurementResult } from './types';
 import { loadLandmarkers } from './vision/landmarkers';
 
-type MeasurePhase = 'monitor' | 'smile';
-export type ScanPhase = 'loading' | 'error' | 'positioning' | MeasurePhase;
+export type ScanPhase = 'loading' | 'error' | 'positioning' | 'monitor';
 
 export type CheckKey = 'face' | 'distance' | 'centered' | 'shoulders' | 'lighting' | 'smooth';
 
@@ -36,11 +36,10 @@ export interface VitalsUpdate {
   urgency: Urgency;
   consciousness: 'alert' | 'reduced' | 'unresponsive' | null;
   pain: 'none' | 'severe' | null;
-  facialDroop: 'symmetric' | 'asymmetric' | null;
   /** Past `PROTOCOL.unclearAfterMs`; a null urgency now means the data is too poor to judge. */
   settled: boolean;
   /** Numbers behind the readings and observations, for troubleshooting. */
-  debug: { vitals: Diagnostics; consciousness: Diagnostics; pain: Diagnostics; smile: Diagnostics };
+  debug: { vitals: Diagnostics; consciousness: Diagnostics; pain: Diagnostics };
 }
 
 export interface ScanOptions {
@@ -51,10 +50,7 @@ export interface ScanOptions {
   onStatus?: (s: ScanStatus) => void;
 }
 
-const PHASE_TEXT: Record<MeasurePhase, string> = {
-  monitor: 'Hold still, breathe normally, look at the screen',
-  smile: 'Smile showing your teeth, and hold it',
-};
+const MONITOR_TEXT = 'Hold still, breathe normally, look at the screen';
 
 function gateMessage(g: GateStatus): string {
   if (!g.face) return 'Please face the screen';
@@ -92,7 +88,6 @@ function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): V
     urgency: elapsedMs < PROTOCOL.minObservationMs ? null : urgencyOf(triage(m)),
     consciousness: state === 'unknown' ? null : state,
     pain: m.pain.assessable ? (m.pain.severe ? 'severe' : 'none') : null,
-    facialDroop: m.facialDroop.assessable ? (m.facialDroop.positive ? 'asymmetric' : 'symmetric') : null,
     settled: elapsedMs >= PROTOCOL.unclearAfterMs,
     debug: {
       vitals: {
@@ -103,15 +98,14 @@ function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): V
       },
       consciousness: m.alertness.debug,
       pain: m.pain.debug,
-      smile: m.facialDroop.debug,
     },
   };
 }
 
 /**
  * Runs the camera scan: positioning gate, then continuous monitoring over the
- * latest 20 s with an on-demand smile prompt. A new session starts
- * automatically when the patient leaves and the next one sits down.
+ * latest 20 s. A new session starts automatically when the patient leaves and
+ * the next one sits down.
  * Returns stop().
  */
 export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} }: ScanOptions): () => void {
@@ -146,22 +140,17 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
       return;
     }
 
-    const next: MeasurePhase = info.prompt ?? 'monitor';
-    if (next !== phase) {
-      phase = next;
-      speak(next === 'smile' ? PHASE_TEXT.smile : 'Thank you. You can relax now.');
-    }
-    emit({ instruction: info.gate.face ? PHASE_TEXT[next] : 'Please look back at the screen' });
+    emit({ instruction: info.gate.face ? MONITOR_TEXT : 'Please look back at the screen' });
   }
 
   function beginMeasurement(): void {
     if (!pipeline) return;
     sessionId++;
     phase = 'monitor';
-    speak(PHASE_TEXT.monitor);
+    speak(MONITOR_TEXT);
     if (stream) void lockExposure(stream);
     pipeline.beginRecording();
-    emit({ instruction: PHASE_TEXT.monitor });
+    emit({ instruction: MONITOR_TEXT });
   }
 
   function toPositioning(): void {
@@ -201,7 +190,11 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
       stream = s;
       pipeline = new Pipeline(video, overlay, lm);
       pipeline.onFrame = onFrame;
-      pipeline.onResult = (m, elapsed) => onVitals(toUpdate(m, elapsed, sessionId));
+      const logPain = createPainLogger();
+      pipeline.onResult = (m, elapsed) => {
+        logPain(m, elapsed, sessionId);
+        onVitals(toUpdate(m, elapsed, sessionId));
+      };
       pipeline.onPatientLeft = toPositioning;
       pipeline.start();
       toPositioning();

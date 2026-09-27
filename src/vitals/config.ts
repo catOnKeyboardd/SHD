@@ -12,16 +12,8 @@ export const PROTOCOL = {
   unclearAfterMs: 30_000,
   /** A heart-rate or respiration estimate is shown for this long when no new one can be made. */
   vitalsHoldMs: 15_000,
-  /** Passive face data needed before eye closure and pain are judged. */
+  /** Face data needed before eye closure and pain are judged. */
   minObservationMs: 5_000,
-  /** Passive data before the first smile prompt; also the resting baseline for it. */
-  smileFirstPromptMs: 10_000,
-  /** Smile prompt length. The first `smileSettleMs` is skipped while the patient hears the prompt and reacts. */
-  smilePromptMs: 5_000,
-  smileSettleMs: 1_500,
-  /** Pause before prompting again when a smile could not be assessed. */
-  smileRetryMs: 15_000,
-  smileMaxAttempts: 3,
   /** Quality gate must pass continuously this long before measurement auto-starts. */
   gateHoldMs: 1_500,
   /** Pose inference interval; respiration needs far less than video rate. */

@@ -16,8 +16,8 @@ export function eyesClosed(o: FaceObservation): boolean {
 const round = (x: number) => +x.toFixed(2);
 
 /**
- * Alertness from the share of passive frames with the eyes closed (PERCLOS).
- * `expectedFrames` is the number of passive video frames in the same span, so
+ * Alertness from the share of frames with the eyes closed (PERCLOS).
+ * `expectedFrames` is the number of video frames in the same span, so
  * a face that is mostly missing gives 'unknown' rather than 'alert'.
  */
 export function assessAlertness(rest: FaceObservation[], expectedFrames: number): AlertnessResult {

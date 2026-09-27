@@ -22,7 +22,6 @@ export function computePriority(vitals, baseline, ai) {
       reasons.push(`Consciousness ${vitals.consciousness}`);
     }
     if (vitals.pain === 'severe') reasons.push('Severe pain expression');
-    if (vitals.facialDroop === 'asymmetric') reasons.push('Asymmetric smile');
 
     if (baseline?.hr && vitals.hr !== null && vitals.hr - baseline.hr >= 20) {
       raise('yellow', `Heart rate up ${vitals.hr - baseline.hr} from arrival`);
