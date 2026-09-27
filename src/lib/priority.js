@@ -15,6 +15,7 @@ export function computePriority(vitals, baseline, ai) {
 
   if (vitals) {
     if (vitals.urgency === 'emergency') raise('red', 'Camera: emergency');
+    else if (vitals.urgency === 'very-urgent') raise('red', 'Camera: very urgent findings');
     else if (vitals.urgency === 'urgent') raise('yellow', 'Camera: urgent findings');
     else if (vitals.settled && vitals.urgency === null) raise('yellow', 'Camera measurement unreliable — recheck');
 
@@ -23,7 +24,7 @@ export function computePriority(vitals, baseline, ai) {
     if (vitals.consciousness === 'reduced' || vitals.consciousness === 'unresponsive') {
       reasons.push(`Consciousness ${vitals.consciousness}`);
     }
-    if (vitals.pain !== null && vitals.pain >= thresholds.observation.painModerate) {
+    if (vitals.pain !== null && vitals.pain >= thresholds.urgent.pain) {
       reasons.push(`Pain expression ${vitals.pain.toFixed(1)}/10`);
     }
 

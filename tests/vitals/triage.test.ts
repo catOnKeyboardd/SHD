@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { overallConfidence, triage, urgencyOf } from '../../src/vitals/triage/engine';
-import type { MeasurementResult, Reading } from '../../src/vitals/types';
+import { overallConfidence, triage } from '../../src/vitals/triage/engine';
+import type { MeasurementResult, PainResult, Reading } from '../../src/vitals/types';
 
 function reading(value: number, confidence = 0.9): Reading {
   return { value, confidence, usable: confidence >= 0.5 };
+}
+
+function pain(score: number, assessable = true): PainResult {
+  return { score, assessable, debug: {} };
 }
 
 function baseline(overrides: Partial<MeasurementResult> = {}): MeasurementResult {
@@ -11,15 +15,17 @@ function baseline(overrides: Partial<MeasurementResult> = {}): MeasurementResult
     heartRate: reading(78),
     respiration: reading(16),
     alertness: { state: 'alert', debug: {} },
-    pain: { score: 0.8, assessable: true, debug: {} },
+    pain: pain(0.8),
     quality: { faceCoverage: 0.98, meanFps: 29 },
     ...overrides,
   };
 }
 
+const urgencyOf = (o: Partial<MeasurementResult>) => triage(baseline(o)).urgency;
+
 describe('triage engine', () => {
-  it('normal findings defer ESI 3–5 to the nurse', () => {
-    expect(triage(baseline())).toBe('nurse');
+  it('normal findings are non-urgent', () => {
+    expect(triage(baseline())).toEqual({ urgency: 'non-urgent', reasons: [] });
   });
 
   it.each([
@@ -28,42 +34,75 @@ describe('triage engine', () => {
     ['bradypnea', { respiration: reading(6) }],
     ['extreme tachypnea', { respiration: reading(40) }],
     ['unresponsive', { alertness: { state: 'unresponsive' as const, debug: {} } }],
-  ])('%s → suspected ESI 1', (_, o) => {
-    expect(triage(baseline(o))).toBe(1);
+  ])('%s → emergency', (_, o) => {
+    expect(urgencyOf(o)).toBe('emergency');
   });
 
   it.each([
-    ['danger-zone heart rate', { heartRate: reading(112) }],
-    ['danger-zone respiration', { respiration: reading(24) }],
-    ['respiratory distress', { respiration: reading(32) }],
     ['reduced alertness', { alertness: { state: 'reduced' as const, debug: {} } }],
-    ['severe pain expression', { pain: { score: 7.4, assessable: true, debug: {} } }],
-  ])('%s → ESI 2', (_, o) => {
-    expect(triage(baseline(o))).toBe(2);
+    ['severe pain', { pain: pain(7.5) }],
+    ['heart rate over 120', { heartRate: reading(130) }],
+    ['respiration over 28', { respiration: reading(32) }],
+  ])('%s → very urgent', (_, o) => {
+    expect(urgencyOf(o)).toBe('very-urgent');
   });
 
-  it('moderate pain alone does not escalate', () => {
-    expect(triage(baseline({ pain: { score: 5.5, assessable: true, debug: {} } }))).toBe('nurse');
+  it.each([
+    ['moderate pain', { pain: pain(4.5) }],
+    ['heart rate 100–120', { heartRate: reading(112) }],
+    ['respiration 21–28', { respiration: reading(24) }],
+  ])('%s → urgent', (_, o) => {
+    expect(urgencyOf(o)).toBe('urgent');
+  });
+
+  it.each([
+    ['mild pain', { pain: pain(2.5) }],
+    ['heart rate 91–100', { heartRate: reading(95) }],
+    ['slow heart rate', { heartRate: reading(45) }],
+    ['respiration 19–20', { respiration: reading(19) }],
+  ])('%s → standard', (_, o) => {
+    expect(urgencyOf(o)).toBe('standard');
+  });
+
+  it('pain climbs through every level as it rises', () => {
+    expect([1, 2, 4, 7].map((s) => urgencyOf({ pain: pain(s) }))).toEqual([
+      'non-urgent',
+      'standard',
+      'urgent',
+      'very-urgent',
+    ]);
+  });
+
+  it('the most urgent finding wins and all its reasons are listed', () => {
+    expect(triage(baseline({ pain: pain(8), heartRate: reading(125), respiration: reading(19) }))).toEqual({
+      urgency: 'very-urgent',
+      reasons: ['pain 8', 'heart rate 125'],
+    });
+  });
+
+  it('pain that could not be assessed does not count', () => {
+    expect(urgencyOf({ pain: pain(9, false) })).toBe('non-urgent');
   });
 
   it('ignores extreme values from low-confidence readings', () => {
-    expect(triage(baseline({ respiration: reading(40, 0.2) }))).toBe('nurse');
+    expect(urgencyOf({ respiration: reading(40, 0.2) })).toBe('non-urgent');
   });
 
-  it('a missing or low-confidence heart rate alone does not make the result unreliable', () => {
-    expect(triage(baseline({ heartRate: reading(78, 0.2) }))).toBe('nurse');
-    expect(triage(baseline({ heartRate: null }))).toBe('nurse');
+  it('a missing heart rate alone does not make the result unclear', () => {
+    expect(urgencyOf({ heartRate: null })).toBe('non-urgent');
   });
 
-  it('is unreliable only when the face is barely seen or the video is very choppy', () => {
+  it('is unclear only when the face is barely seen or the video is very choppy', () => {
     const q = baseline().quality;
-    expect(triage(baseline({ quality: { ...q, faceCoverage: 0.6 } }))).toBe('nurse');
-    expect(triage(baseline({ quality: { ...q, faceCoverage: 0.4 } }))).toBe('unreliable');
-    expect(triage(baseline({ quality: { ...q, meanFps: 8 } }))).toBe('unreliable');
+    expect(urgencyOf({ quality: { ...q, faceCoverage: 0.6 } })).toBe('non-urgent');
+    expect(urgencyOf({ quality: { ...q, faceCoverage: 0.4 } })).toBeNull();
+    expect(urgencyOf({ quality: { ...q, meanFps: 8 } })).toBeNull();
   });
 
-  it('high-risk findings still escalate even when data quality is poor', () => {
-    expect(triage(baseline({ heartRate: null, respiration: reading(38) }))).toBe(1);
+  it('findings still escalate even when data quality is poor', () => {
+    expect(urgencyOf({ heartRate: null, respiration: reading(38), quality: { faceCoverage: 0.4, meanFps: 29 } })).toBe(
+      'emergency',
+    );
   });
 });
 
@@ -92,14 +131,5 @@ describe('overall confidence', () => {
   it('drops when the face is often missing', () => {
     const q = { ...baseline().quality, faceCoverage: 0.4 };
     expect(overallConfidence(baseline({ quality: q }), 60_000)).toBeLessThan(0.5);
-  });
-});
-
-describe('urgency wording', () => {
-  it('maps triage levels to plain words', () => {
-    expect(urgencyOf(1)).toBe('emergency');
-    expect(urgencyOf(2)).toBe('urgent');
-    expect(urgencyOf('nurse')).toBe('routine');
-    expect(urgencyOf('unreliable')).toBeNull();
   });
 });

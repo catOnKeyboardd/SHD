@@ -1,4 +1,10 @@
-const URGENCY = { emergency: 'Emergency', urgent: 'Urgent', routine: 'Routine' };
+const URGENCY = {
+  emergency: 'Emergency',
+  'very-urgent': 'Very urgent',
+  urgent: 'Urgent',
+  standard: 'Standard',
+  'non-urgent': 'Non-urgent',
+};
 
 function ago(ms) {
   const s = Math.round((Date.now() - ms) / 1000);

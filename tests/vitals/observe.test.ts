@@ -51,11 +51,11 @@ describe('pain expression', () => {
   it('neutral face scores near 0', () => {
     const r = assessPain(frames(10_000, neutral));
     expect(r.assessable).toBe(true);
-    expect(r.score).toBe(0.4);
+    expect(r.score).toBe(0.8);
   });
 
-  it('raw score maps onto 0-10 with one decimal, aligned with NRS bands', () => {
-    expect([0, 0.25, 0.5, 0.65, 0.8, 1.1, 1.6, 2.0, 3.0].map(toPainScale)).toEqual([0, 0.5, 1, 2.5, 4, 7, 8.7, 10, 10]);
+  it('raw score maps onto 0-10 with one decimal', () => {
+    expect([0, 0.25, 0.5, 0.65, 0.8, 0.85, 0.9, 1.5].map(toPainScale)).toEqual([0, 1, 2, 5, 8, 9, 10, 10]);
   });
 
   it('sustained grimace is severe', () => {

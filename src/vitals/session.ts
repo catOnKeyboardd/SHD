@@ -3,7 +3,7 @@ import { Pipeline, type FrameInfo, type GateStatus } from './capture/pipeline';
 import { PROTOCOL } from './config';
 import { createPainLogger } from './debugLog';
 import { speak, stopSpeaking } from './speech';
-import { overallConfidence, triage, urgencyOf, type Urgency } from './triage/engine';
+import { overallConfidence, triage, type Urgency } from './triage/engine';
 import type { Diagnostics, MeasurementResult } from './types';
 import { loadLandmarkers } from './vision/landmarkers';
 
@@ -40,7 +40,7 @@ export interface VitalsUpdate {
   /** Past `PROTOCOL.unclearAfterMs`; a null urgency now means the data is too poor to judge. */
   settled: boolean;
   /** Numbers behind the readings and observations, for troubleshooting. */
-  debug: { vitals: Diagnostics; consciousness: Diagnostics; pain: Diagnostics };
+  debug: { urgency: Diagnostics; vitals: Diagnostics; consciousness: Diagnostics; pain: Diagnostics };
 }
 
 export interface ScanOptions {
@@ -78,6 +78,8 @@ function checksOf(g: GateStatus): Record<CheckKey, boolean> {
 
 function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): VitalsUpdate {
   const state = m.alertness.state;
+  const t = triage(m);
+  const checking = elapsedMs < PROTOCOL.minObservationMs;
   return {
     sessionId,
     hr: m.heartRate?.value ?? null,
@@ -86,11 +88,12 @@ function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): V
     stress: null,
     bp: null,
     confidence: overallConfidence(m, elapsedMs),
-    urgency: elapsedMs < PROTOCOL.minObservationMs ? null : urgencyOf(triage(m)),
+    urgency: checking ? null : t.urgency,
     consciousness: state === 'unknown' ? null : state,
     pain: elapsedMs < PROTOCOL.minObservationMs ? null : m.pain.score,
     settled: elapsedMs >= PROTOCOL.unclearAfterMs,
     debug: {
+      urgency: { level: checking ? 'checking' : t.urgency, reasons: t.reasons.join(', ') || 'none' },
       vitals: {
         hrConfidence: m.heartRate?.confidence ?? null,
         rrConfidence: m.respiration?.confidence ?? null,

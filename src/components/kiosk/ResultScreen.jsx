@@ -4,14 +4,16 @@ import thresholds from '../../vitals/triage/thresholds.json';
 
 const URGENCY = {
   emergency: ['Emergency', 'Get help now', 'urgency-emergency'],
-  urgent: ['Urgent', 'See a nurse soon', 'urgency-urgent'],
-  routine: ['Routine', 'Please wait to be called', 'urgency-routine'],
+  'very-urgent': ['Very urgent', 'Tell a nurse now', 'urgency-very-urgent'],
+  urgent: ['Urgent', 'A nurse will see you soon', 'urgency-urgent'],
+  standard: ['Standard', 'Please wait to be called', 'urgency-standard'],
+  'non-urgent': ['Non-urgent', 'Please wait to be called', 'urgency-non-urgent'],
 };
 const CHECKING = ['Checking…', 'Please stay still', 'urgency-pending'];
 const UNCLEAR = ['Unclear', 'Please ask a nurse', 'urgency-pending'];
 
 const showDebug = new URLSearchParams(window.location.search).has('debug');
-const PAIN_ALARM = thresholds.observation.painModerate;
+const PAIN_ALARM = thresholds.urgent.pain;
 
 function Tile({ name, value, unit, alarm }) {
   return (

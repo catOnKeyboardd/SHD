@@ -1,32 +1,45 @@
 {
   "_comment": "All clinical cut-offs live here so they can be reviewed without touching code. Adult patients only.",
   "critical": {
-    "_comment": "Suspected ESI 1: call for immediate help.",
+    "_comment": "Emergency (suspected ESI 1): call for immediate help.",
     "heartRateBelow": 40,
     "heartRateAbove": 150,
     "respirationBelow": 8,
     "respirationAbove": 36
   },
-  "dangerZone": {
-    "_comment": "ESI decision point D (adult): consider ESI 2.",
+  "veryUrgent": {
+    "_comment": "Very urgent (about ESI 2). Reduced alertness also lands here.",
+    "pain": 7,
+    "heartRateAbove": 120,
+    "respirationAbove": 28
+  },
+  "urgent": {
+    "_comment": "Urgent (about ESI 3). Includes the ESI danger-zone vitals.",
+    "pain": 4,
     "heartRateAbove": 100,
     "respirationAbove": 20
+  },
+  "standard": {
+    "_comment": "Standard (about ESI 4): mildly abnormal. Anything below is Non-urgent.",
+    "pain": 2,
+    "heartRateAbove": 90,
+    "heartRateBelow": 50,
+    "respirationAbove": 18,
+    "respirationBelow": 10
   },
   "observation": {
     "eyeClosedBlendshape": 0.55,
     "perclosReduced": 0.4,
     "perclosUnresponsive": 0.85,
     "painScale": {
-      "_comment": "Piecewise-linear map from the raw expression score (sum of AU4, AU6/7 and AU9/10 blendshapes, 0..3) to 0-10, aligned with NRS bands: 1-3 mild, 4-6 moderate, 7-10 severe.",
-      "raw": [0, 0.5, 0.8, 1.1, 2.0],
-      "score": [0, 1, 4, 7, 10]
+      "_comment": "Piecewise-linear map from the raw expression score (sum of AU4, AU6/7 and AU9/10 blendshapes, 0..3) to 0-10.",
+      "raw": [0, 0.5, 0.8, 0.9],
+      "score": [0, 2, 8, 10]
     },
-    "painModerate": 4,
-    "painSevere": 7,
     "painMinOpenEyeShare": 0.3
   },
   "quality": {
-    "_comment": "minFps gates the start of a measurement; below the unclear* values the result is 'Unclear' instead of 'Routine'.",
+    "_comment": "minFps gates the start of a measurement; below the unclear* values the result is 'Unclear'.",
     "minFps": 15,
     "unclearFaceCoverage": 0.5,
     "unclearFps": 10

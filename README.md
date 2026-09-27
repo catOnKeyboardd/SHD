@@ -37,7 +37,7 @@ Files in `api/` run at `/api/*` only during `npm run dev`. GitHub Pages has no s
 // vitals.js
 startScan(onVitals, { video, overlay, onStatus }) → stop()
 onVitals({ sessionId, hr, rr, hrv: null, stress: null, bp: null, confidence,
-           urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, settled, debug })  // ~1/s; null when the patient leaves
+           urgency: 'emergency'|'very-urgent'|'urgent'|'standard'|'non-urgent'|null, consciousness, pain, settled, debug })  // ~1/s; null when the patient leaves
 
 // voice.js
 startListening()
@@ -56,10 +56,10 @@ computePriority(vitals, baseline, ai) → { level: 'green' | 'yellow' | 'red', r
 
 - Heart rate: forehead and cheek regions → skin filter → POS rPPG → spectral peak, with SNR-based confidence.
 - Respiration: shoulder motion (pose landmarks) fused with forehead intensity.
-- Observations from face blendshapes: consciousness (eye closure) and pain expression, shown as 0–10 with one decimal from the last 3 s of open-eye frames (0 is also the default when the face cannot be assessed; 7 or more raises urgency).
+- Observations from face blendshapes: consciousness (eye closure) and pain expression, shown as 0–10 with one decimal from the last 3 s of open-eye frames (0 is also the default when the face cannot be assessed). Pain of 2 / 4 / 7 or more raises urgency to Standard / Urgent / Very urgent.
 - Flow: positioning checks → continuous monitoring over the latest 20 s. No face for 5 s resets for the next patient.
 - Heart rate and respiration show the latest estimate even at low confidence, and keep it for up to 15 s when no new one can be made; only confident readings are used for triage.
-- Confidence (0–100 %) starts low and rises quickly over the first 15 s, scaled by signal quality. Urgency is shown in plain words (Emergency / Urgent / Routine) after 5 s; it says Unclear only when, after 30 s, the face was visible in under half the frames or the video runs below 10 fps.
+- Confidence (0–100 %) starts low and rises quickly over the first 15 s, scaled by signal quality. Urgency has five levels after 5 s — Emergency, Very urgent, Urgent, Standard, Non-urgent (cut-offs in `thresholds.json`; the most urgent matching finding wins); it says Unclear only when, after 30 s, the face was visible in under half the frames or the video runs below 10 fps.
 - Add `?debug` to the kiosk URL to see the numbers behind the readings, consciousness and pain. The browser console logs the pain check (filter by `[pain]`) whenever its result changes and every 5 s.
 - `hrv`, `stress` and `bp` are not measurable with this method and are always null.
 - ESI cut-offs are in `src/vitals/triage/thresholds.json`. Adults only; not clinically validated.

@@ -170,11 +170,25 @@
   background: var(--red);
 }
 
-.urgency-urgent {
+.urgency-very-urgent {
   background: var(--orange);
 }
 
-.urgency-routine {
+.urgency-urgent {
+  background: #eab308;
+}
+
+.urgency-urgent,
+.urgency-urgent .name,
+.urgency-urgent .hint {
+  color: #1c1917;
+}
+
+.urgency-standard {
+  background: #16a34a;
+}
+
+.urgency-non-urgent {
   background: var(--blue);
 }
 
