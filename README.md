@@ -36,8 +36,8 @@ Files in `api/` run at `/api/*` only during `npm run dev`. GitHub Pages has no s
 ```js
 // vitals.js
 startScan(onVitals, { video, overlay, onStatus }) → stop()
-onVitals({ sessionId, hr, rr, hrv: null, stress: null, bp: null, quality: 'good'|'poor',
-           esi: 1|2|'3-5'|null, consciousness, pain, facialDroop, complete })  // ~1/s; null when the patient leaves
+onVitals({ sessionId, hr, rr, hrv: null, stress: null, bp: null, confidence,
+           urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, facialDroop, settled, debug })  // ~1/s; null when the patient leaves
 
 // voice.js
 startListening()
@@ -56,8 +56,10 @@ computePriority(vitals, baseline, ai) → { level: 'green' | 'yellow' | 'red', r
 
 - Heart rate: forehead and cheek regions → skin filter → POS rPPG → spectral peak, with SNR-based confidence.
 - Respiration: shoulder motion (pose landmarks) fused with forehead intensity.
-- Observations from face blendshapes: consciousness (eye closure + following an on-screen dot), pain expression, smile symmetry.
-- Flow: positioning checks → 20 s prompted cycle (rest, gaze dot, smile) → continuous monitoring over the latest 20 s. No face for 5 s resets for the next patient.
+- Observations from face blendshapes: consciousness (eye closure), pain expression, smile symmetry.
+- Flow: positioning checks → continuous monitoring over the latest 20 s. After 10 s of rest the patient is asked to smile; the prompt repeats (up to 3 times) until the smile can be assessed. No face for 5 s resets for the next patient.
+- Confidence (0–100 %) starts low and grows over the first 30 s with signal quality. Urgency is shown in plain words (Emergency / Urgent / Routine); Routine is only shown once confidence is at least 50 %.
+- Add `?debug` to the kiosk URL to see the numbers behind consciousness, pain and smile.
 - `hrv`, `stress` and `bp` are not measurable with this method and are always null.
 - ESI cut-offs are in `src/vitals/triage/thresholds.json`. Adults only; not clinically validated.
 

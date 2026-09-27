@@ -12,9 +12,9 @@ export function computePriority(vitals, baseline, ai) {
   };
 
   if (vitals) {
-    if (vitals.esi === 1) raise('red', 'Camera: suspected ESI 1');
-    else if (vitals.esi === 2) raise('yellow', 'Camera: ESI 2 findings');
-    else if (vitals.complete && vitals.esi === null) raise('yellow', 'Camera measurement unreliable — recheck');
+    if (vitals.urgency === 'emergency') raise('red', 'Camera: emergency');
+    else if (vitals.urgency === 'urgent') raise('yellow', 'Camera: urgent findings');
+    else if (vitals.settled && vitals.urgency === null) raise('yellow', 'Camera measurement unreliable — recheck');
 
     if (vitals.hr !== null && (vitals.hr > 100 || vitals.hr < 50)) reasons.push(`Heart rate ${vitals.hr}`);
     if (vitals.rr !== null && (vitals.rr > 20 || vitals.rr < 10)) reasons.push(`Respiration ${vitals.rr}`);

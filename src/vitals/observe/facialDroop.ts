@@ -1,21 +1,21 @@
-import { PROTOCOL } from '../config';
 import thresholds from '../triage/thresholds.json';
 import type { FacialDroopResult } from '../types';
 import { median } from '../signals/dsp';
-import { inRange, type FaceObservation } from './frames';
+import type { FaceObservation } from './frames';
 
 const T = thresholds.observation;
+const round = (x: number) => +x.toFixed(3);
 
 /**
  * Smile symmetry: how far each mouth corner rises from its resting height
- * during the smile prompt, combined with MediaPipe's per-side smile scores.
+ * (`rest` frames) while smiling on request (`smile` frames), combined with
+ * MediaPipe's per-side smile scores.
  */
-export function assessFacialDroop(obs: FaceObservation[]): FacialDroopResult {
-  const rest = obs.filter((o) => o.t < PROTOCOL.restMs);
-  const [s, e] = PROTOCOL.smileMs;
-  const smile = obs.filter((o) => inRange(o, [s + T.smileSettleMs, e]));
-  const notAssessable = { positive: false, assessable: false };
-  if (rest.length < 20 || smile.length < 8) return notAssessable;
+export function assessFacialDroop(rest: FaceObservation[], smile: FaceObservation[]): FacialDroopResult {
+  const counts = { restFrames: rest.length, smileFrames: smile.length };
+  if (rest.length < 20 || smile.length < 8) {
+    return { positive: false, assessable: false, debug: { reason: 'too few face frames', ...counts } };
+  }
 
   const baseA = median(rest.map((o) => o.cornerA));
   const baseB = median(rest.map((o) => o.cornerB));
@@ -27,11 +27,19 @@ export function assessFacialDroop(obs: FaceObservation[]): FacialDroopResult {
   const liftA = median(peak.map((l) => l.a));
   const liftB = median(peak.map((l) => l.b));
   const maxLift = Math.max(liftA, liftB);
-  if (maxLift < T.smileMinLift) return notAssessable;
-
-  const geoAsym = Math.abs(liftA - liftB) / maxLift;
   const smileL = median(peak.map((l) => l.o.blend.mouthSmileLeft ?? 0));
   const smileR = median(peak.map((l) => l.o.blend.mouthSmileRight ?? 0));
+  const debug = { ...counts, liftA: round(liftA), liftB: round(liftB), smileL: round(smileL), smileR: round(smileR) };
+  if (maxLift < T.smileMinLift) {
+    return { positive: false, assessable: false, debug: { reason: 'no smile detected', ...debug } };
+  }
+
+  const geoAsym = Math.abs(liftA - liftB) / maxLift;
   const blendAsym = Math.max(smileL, smileR) > 0.1 ? Math.abs(smileL - smileR) / Math.max(smileL, smileR) : 0;
-  return { positive: Math.max(geoAsym, blendAsym) >= T.smileAsymmetryPositive, assessable: true };
+  const asymmetry = Math.max(geoAsym, blendAsym);
+  return {
+    positive: asymmetry >= T.smileAsymmetryPositive,
+    assessable: true,
+    debug: { ...debug, asymmetry: round(asymmetry) },
+  };
 }

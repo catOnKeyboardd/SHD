@@ -1,55 +1,32 @@
-import { PROTOCOL } from '../config';
 import thresholds from '../triage/thresholds.json';
 import type { AlertnessResult } from '../types';
 import { median } from '../signals/dsp';
-import { avg, inRange, type FaceObservation } from './frames';
+import { avg, type FaceObservation } from './frames';
 
 const T = thresholds.observation;
 
-/** Signed horizontal gaze. Direction convention does not matter; only the left/right separation is used. */
-function horizontalGaze(o: FaceObservation): number {
-  const b = o.blend;
-  return (
-    ((b.eyeLookOutLeft ?? 0) + (b.eyeLookInRight ?? 0) - (b.eyeLookInLeft ?? 0) - (b.eyeLookOutRight ?? 0)) / 2
-  );
+export function blinkScore(o: FaceObservation): number {
+  return avg(o, 'eyeBlinkLeft', 'eyeBlinkRight');
 }
 
 export function eyesClosed(o: FaceObservation): boolean {
-  return avg(o, 'eyeBlinkLeft', 'eyeBlinkRight') > T.eyeClosedBlendshape;
+  return blinkScore(o) > T.eyeClosedBlendshape;
 }
 
+const round = (x: number) => +x.toFixed(2);
+
 /**
- * Alertness from eye closure during rest (PERCLOS) and whether the eyes follow
- * the on-screen dot to the left and then to the right. `restRange` selects the
- * passive frames used for PERCLOS; the gaze prompt always uses PROTOCOL times.
+ * Alertness from the share of passive frames with the eyes closed (PERCLOS).
+ * `expectedFrames` is the number of passive video frames in the same span, so
+ * a face that is mostly missing gives 'unknown' rather than 'alert'.
  */
-export function assessAlertness(
-  obs: FaceObservation[],
-  expectedRestFrames: number,
-  restRange: readonly [number, number] = [0, PROTOCOL.restMs],
-): AlertnessResult {
-  const rest = obs.filter((o) => inRange(o, restRange));
-  if (rest.length < expectedRestFrames * 0.5) {
-    return { state: 'unknown', followedGaze: null };
+export function assessAlertness(rest: FaceObservation[], expectedFrames: number): AlertnessResult {
+  if (!rest.length || rest.length < expectedFrames * 0.5) {
+    return { state: 'unknown', debug: { reason: 'face missing in most frames', frames: rest.length, expectedFrames } };
   }
   const perclos = rest.filter(eyesClosed).length / rest.length;
-
-  const delay = T.gazeReactionDelayMs;
-  const phase = ([s, e]: readonly [number, number]) =>
-    obs.filter((o) => inRange(o, [s + delay, e]) && !eyesClosed(o)).map(horizontalGaze);
-  const left = phase(PROTOCOL.gazeLeftMs);
-  const right = phase(PROTOCOL.gazeRightMs);
-
-  let followedGaze: boolean | null = null;
-  if (left.length >= 5 && right.length >= 5) {
-    followedGaze = Math.abs(median(left) - median(right)) >= T.gazeResponseMin;
-  } else {
-    const gazeObs = obs.filter((o) => inRange(o, [PROTOCOL.gazeLeftMs[0], PROTOCOL.gazeRightMs[1]]));
-    // Face present but eyes shut throughout the prompt counts as not following.
-    if (gazeObs.length >= 10 && gazeObs.filter(eyesClosed).length / gazeObs.length > 0.7) followedGaze = false;
-  }
-
-  if (perclos >= T.perclosUnresponsive && followedGaze === false) return { state: 'unresponsive', followedGaze };
-  if (perclos >= T.perclosReduced || followedGaze === false) return { state: 'reduced', followedGaze };
-  return { state: 'alert', followedGaze };
+  const debug = { perclos: round(perclos), blinkMedian: round(median(rest.map(blinkScore))) };
+  if (perclos >= T.perclosUnresponsive) return { state: 'unresponsive', debug };
+  if (perclos >= T.perclosReduced) return { state: 'reduced', debug };
+  return { state: 'alert', debug };
 }

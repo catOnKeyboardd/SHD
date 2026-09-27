@@ -9,12 +9,14 @@ export interface FaceObservation {
    */
   cornerA: number;
   cornerB: number;
+  /** False while the patient is following a prompt (e.g. smiling), so the face is not at rest. */
+  passive: boolean;
 }
 
 export function avg(obs: FaceObservation, a: string, b: string): number {
   return ((obs.blend[a] ?? 0) + (obs.blend[b] ?? 0)) / 2;
 }
 
-export function inRange(obs: FaceObservation, [start, end]: readonly [number, number]): boolean {
+export function inRange(obs: { t: number }, [start, end]: readonly [number, number]): boolean {
   return obs.t >= start && obs.t < end;
 }

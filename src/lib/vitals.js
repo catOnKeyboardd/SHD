@@ -4,9 +4,10 @@
 // startScan(onVitals, { video, overlay, onStatus }) → stop()
 //
 // onVitals is called about once a second while a patient is being measured:
-//   { sessionId, hr, rr, hrv: null, stress: null, bp: null, quality: 'good'|'poor',
-//     esi: 1|2|'3-5'|null, consciousness, pain, facialDroop, complete }
+//   { sessionId, hr, rr, hrv: null, stress: null, bp: null, confidence: 0..1,
+//     urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, facialDroop, settled, debug }
 // hr / rr are null until confident; hrv, stress and bp are not measurable with this method.
+// confidence starts low and grows over the first 30 s as data accumulates.
 // It is called with null when the patient walks away (no face for 5 s).
 //
 // onStatus(status) drives the scan UI (instruction text, positioning checks,
