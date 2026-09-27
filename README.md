@@ -58,7 +58,8 @@ computePriority(vitals, baseline, ai) → { level: 'green' | 'yellow' | 'red', r
 - Respiration: shoulder motion (pose landmarks) fused with forehead intensity.
 - Observations from face blendshapes: consciousness (eye closure), pain expression, smile symmetry.
 - Flow: positioning checks → continuous monitoring over the latest 20 s. After 10 s of rest the patient is asked to smile; the prompt repeats (up to 3 times) until the smile can be assessed. No face for 5 s resets for the next patient.
-- Confidence (0–100 %) starts low and grows over the first 30 s with signal quality. Urgency is shown in plain words (Emergency / Urgent / Routine); Routine is only shown once confidence is at least 50 %.
+- Heart rate and respiration show the latest estimate even at low confidence, and keep it for up to 15 s when no new one can be made; only confident readings are used for triage.
+- Confidence (0–100 %) starts low and rises quickly over the first 15 s, scaled by signal quality. Urgency is shown in plain words (Emergency / Urgent / Routine) after 5 s; it says Unclear only when, after 30 s, the face was visible in under half the frames or the video runs below 10 fps.
 - Add `?debug` to the kiosk URL to see the numbers behind consciousness, pain and smile.
 - `hrv`, `stress` and `bp` are not measurable with this method and are always null.
 - ESI cut-offs are in `src/vitals/triage/thresholds.json`. Adults only; not clinically validated.

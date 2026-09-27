@@ -6,8 +6,9 @@
 // onVitals is called about once a second while a patient is being measured:
 //   { sessionId, hr, rr, hrv: null, stress: null, bp: null, confidence: 0..1,
 //     urgency: 'emergency'|'urgent'|'routine'|null, consciousness, pain, facialDroop, settled, debug }
-// hr / rr are null until confident; hrv, stress and bp are not measurable with this method.
-// confidence starts low and grows over the first 30 s as data accumulates.
+// hr / rr show the latest estimate at any confidence (null only before the first one);
+// hrv, stress and bp are not measurable with this method.
+// confidence starts low and rises over the first 15 s as data accumulates.
 // It is called with null when the patient walks away (no face for 5 s).
 //
 // onStatus(status) drives the scan UI (instruction text, positioning checks,

@@ -57,6 +57,15 @@ function dropRange<T extends { t: number }>(arr: T[], from: number, to: number):
   while (i1 < arr.length && arr[i1].t < to) i1++;
   if (i1 > i0) arr.splice(i0, i1 - i0);
 }
+interface TimedReading {
+  reading: Reading;
+  t: number;
+}
+
+function recent(last: TimedReading | null, now: number): Reading | null {
+  return last && now - last.t <= PROTOCOL.vitalsHoldMs ? last.reading : null;
+}
+
 interface SmileCheck {
   attempts: number;
   /** Elapsed time at which the next prompt may start. */
@@ -94,13 +103,13 @@ export class Pipeline {
   private recording = false;
   private startT = 0;
   private lastResultT = 0;
-  private lastResult: MeasurementResult | null = null;
   private lastFaceT = 0;
   private smile: SmileCheck = { attempts: 0, nextAt: 0, promptStart: null, result: null };
   /** Start of the uninterrupted passive stretch the vitals are computed from. */
   private vitalsStart = 0;
-  /** Vitals from before the last prompt, shown until the new stretch is long enough. */
-  private held: { heartRate: Reading | null; respiration: Reading | null; until: number } | null = null;
+  /** Latest estimates, reused for up to `PROTOCOL.vitalsHoldMs` when a new one cannot be made. */
+  private lastHeartRate: TimedReading | null = null;
+  private lastRespiration: TimedReading | null = null;
   private roiFrames: RoiFrame[] = [];
   private faceObs: FaceObservation[] = [];
   private shoulderY: TimedValue[] = [];
@@ -136,10 +145,10 @@ export class Pipeline {
     this.lastNose = null;
     this.lastLum = null;
     this.lastResultT = 0;
-    this.lastResult = null;
     this.smile = { attempts: 0, nextAt: PROTOCOL.smileFirstPromptMs, promptStart: null, result: null };
     this.vitalsStart = 0;
-    this.held = null;
+    this.lastHeartRate = null;
+    this.lastRespiration = null;
     this.startT = performance.now();
     this.lastFaceT = this.startT;
     this.recording = true;
@@ -275,20 +284,13 @@ export class Pipeline {
     s.result = assessFacialDroop(rest, smiling);
     s.promptStart = null;
     s.nextAt = elapsed + PROTOCOL.smileRetryMs;
-
     this.vitalsStart = elapsed;
-    this.held = this.lastResult && {
-      heartRate: this.lastResult.heartRate,
-      respiration: this.lastResult.respiration,
-      until: elapsed + PROTOCOL.windowMs,
-    };
   }
 
   private maybeEmit(elapsed: number): void {
     if (elapsed - this.lastResultT < PROTOCOL.liveIntervalMs) return;
     this.lastResultT = elapsed;
-    this.lastResult = this.snapshot(elapsed);
-    this.onResult(this.lastResult, elapsed);
+    this.onResult(this.snapshot(elapsed), elapsed);
   }
 
   /** Keep only the rolling window. */
@@ -372,12 +374,12 @@ export class Pipeline {
     );
     const spanMs = Math.min(elapsedMs, PROTOCOL.windowMs);
 
-    const held = this.held && elapsedMs < this.held.until ? this.held : null;
-    const heartRate = estimateHeartRate(sinceVitalsStart(this.roiFrames), qualityFactor) ?? held?.heartRate ?? null;
-    const respiration =
-      estimateRespiration(sinceVitalsStart(this.shoulderY), sinceVitalsStart(this.foreheadLum), qualityFactor) ??
-      held?.respiration ??
-      null;
+    const hr = estimateHeartRate(sinceVitalsStart(this.roiFrames), qualityFactor);
+    const rr = estimateRespiration(sinceVitalsStart(this.shoulderY), sinceVitalsStart(this.foreheadLum), qualityFactor);
+    if (hr) this.lastHeartRate = { reading: hr, t: elapsedMs };
+    if (rr) this.lastRespiration = { reading: rr, t: elapsedMs };
+    const heartRate = recent(this.lastHeartRate, elapsedMs);
+    const respiration = recent(this.lastRespiration, elapsedMs);
 
     const rest = this.faceObs.filter((o) => o.passive);
     const warmingUp = { reason: 'collecting data', frames: rest.length };

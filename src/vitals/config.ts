@@ -6,8 +6,12 @@ export const PROTOCOL = {
   liveIntervalMs: 1_000,
   /** No face for this long means the patient left; the page returns to positioning. */
   patientLeftMs: 5_000,
-  /** Overall confidence cannot exceed elapsed / this, so it starts low and grows. */
-  confidenceRampMs: 30_000,
+  /** Overall confidence is capped by sqrt(elapsed / this), so it starts low and grows quickly. */
+  confidenceRampMs: 15_000,
+  /** "Unclear" (data too poor to judge) is only shown after this much recording. */
+  unclearAfterMs: 30_000,
+  /** A heart-rate or respiration estimate is shown for this long when no new one can be made. */
+  vitalsHoldMs: 15_000,
   /** Passive face data needed before eye closure and pain are judged. */
   minObservationMs: 5_000,
   /** Passive data before the first smile prompt; also the resting baseline for it. */

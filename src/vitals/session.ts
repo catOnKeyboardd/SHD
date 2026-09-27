@@ -19,8 +19,9 @@ export interface ScanStatus {
 }
 
 /**
- * Payload of `onVitals` (see src/lib/vitals.js). Vitals are null until a
- * reading is confident enough to use; observations are null until assessable.
+ * Payload of `onVitals` (see src/lib/vitals.js). Vitals show the latest
+ * estimate whatever its confidence and are null only before the first one;
+ * observations are null until assessable.
  */
 export interface VitalsUpdate {
   sessionId: number;
@@ -31,15 +32,15 @@ export interface VitalsUpdate {
   bp: null;
   /** 0..1 trust in this update; starts low and grows with recording time and signal quality. */
   confidence: number;
-  /** Camera-only triage suggestion; null while still checking or when data is unreliable. */
+  /** Camera-only triage suggestion; null while still checking or when the face is barely visible. */
   urgency: Urgency;
   consciousness: 'alert' | 'reduced' | 'unresponsive' | null;
   pain: 'none' | 'severe' | null;
   facialDroop: 'symmetric' | 'asymmetric' | null;
-  /** Recording has run for the full confidence ramp; a null urgency now means unreliable data. */
+  /** Past `PROTOCOL.unclearAfterMs`; a null urgency now means the data is too poor to judge. */
   settled: boolean;
-  /** Numbers behind consciousness, pain and smile, for troubleshooting. */
-  debug: { consciousness: Diagnostics; pain: Diagnostics; smile: Diagnostics };
+  /** Numbers behind the readings and observations, for troubleshooting. */
+  debug: { vitals: Diagnostics; consciousness: Diagnostics; pain: Diagnostics; smile: Diagnostics };
 }
 
 export interface ScanOptions {
@@ -79,22 +80,31 @@ function checksOf(g: GateStatus): Record<CheckKey, boolean> {
 }
 
 function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): VitalsUpdate {
-  const confidence = overallConfidence(m, elapsedMs);
   const state = m.alertness.state;
   return {
     sessionId,
-    hr: m.heartRate?.usable ? m.heartRate.value : null,
-    rr: m.respiration?.usable ? m.respiration.value : null,
+    hr: m.heartRate?.value ?? null,
+    rr: m.respiration?.value ?? null,
     hrv: null,
     stress: null,
     bp: null,
-    confidence,
-    urgency: urgencyOf(triage(m), confidence),
+    confidence: overallConfidence(m, elapsedMs),
+    urgency: elapsedMs < PROTOCOL.minObservationMs ? null : urgencyOf(triage(m)),
     consciousness: state === 'unknown' ? null : state,
     pain: m.pain.assessable ? (m.pain.severe ? 'severe' : 'none') : null,
     facialDroop: m.facialDroop.assessable ? (m.facialDroop.positive ? 'asymmetric' : 'symmetric') : null,
-    settled: elapsedMs >= PROTOCOL.confidenceRampMs,
-    debug: { consciousness: m.alertness.debug, pain: m.pain.debug, smile: m.facialDroop.debug },
+    settled: elapsedMs >= PROTOCOL.unclearAfterMs,
+    debug: {
+      vitals: {
+        hrConfidence: m.heartRate?.confidence ?? null,
+        rrConfidence: m.respiration?.confidence ?? null,
+        faceCoverage: +m.quality.faceCoverage.toFixed(2),
+        fps: Math.round(m.quality.meanFps),
+      },
+      consciousness: m.alertness.debug,
+      pain: m.pain.debug,
+      smile: m.facialDroop.debug,
+    },
   };
 }
 

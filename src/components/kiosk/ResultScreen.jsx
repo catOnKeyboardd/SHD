@@ -68,17 +68,21 @@ export default function ResultScreen({ vitals }) {
 
   return (
     <section className="summary">
-      <Urgency urgency={vitals.urgency} settled={vitals.settled} />
-      <Confidence value={vitals.confidence} />
-      <Tile name="Heart rate" value={vitals.hr ?? none} unit={vitals.hr && 'bpm'} />
-      <Tile name="Respiration" value={vitals.rr ?? none} unit={vitals.rr && '/min'} />
-      <Tile name="Consciousness" value={vitals.consciousness ? cap(vitals.consciousness) : none} />
-      <Tile name="Pain" value={vitals.pain ? cap(vitals.pain) : none} alarm={vitals.pain === 'severe'} />
-      <Tile
-        name="Smile"
-        value={vitals.facialDroop ? cap(vitals.facialDroop) : none}
-        alarm={vitals.facialDroop === 'asymmetric'}
-      />
+      <div className="headlines">
+        <Urgency urgency={vitals.urgency} settled={vitals.settled} />
+        <Confidence value={vitals.confidence} />
+      </div>
+      <div className="tiles">
+        <Tile name="Heart rate" value={vitals.hr ?? none} unit={vitals.hr && 'bpm'} />
+        <Tile name="Respiration" value={vitals.rr ?? none} unit={vitals.rr && '/min'} />
+        <Tile name="Consciousness" value={vitals.consciousness ? cap(vitals.consciousness) : none} />
+        <Tile name="Pain" value={vitals.pain ? cap(vitals.pain) : none} alarm={vitals.pain === 'severe'} />
+        <Tile
+          name="Smile"
+          value={vitals.facialDroop ? cap(vitals.facialDroop) : none}
+          alarm={vitals.facialDroop === 'asymmetric'}
+        />
+      </div>
       {showDebug && <Debug debug={vitals.debug} />}
     </section>
   );

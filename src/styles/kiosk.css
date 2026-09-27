@@ -82,8 +82,20 @@
 
 .summary {
   width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.summary .headlines {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.summary .tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0.6rem;
 }
 
@@ -97,7 +109,6 @@
 }
 
 .summary .headline {
-  grid-column: span 2;
   color: #fff;
   transition: background 0.3s;
 }
@@ -120,7 +131,7 @@
 }
 
 .summary .value {
-  font-size: 1.6rem;
+  font-size: 1.15rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -176,7 +187,6 @@
 }
 
 .summary .debug {
-  grid-column: 1 / -1;
   margin: 0;
   padding: 0.6rem 0.8rem;
   font-size: 0.75rem;

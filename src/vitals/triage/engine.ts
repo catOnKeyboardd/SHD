@@ -1,4 +1,4 @@
-import { MIN_CONFIDENCE_FOR_TRIAGE, PROTOCOL } from '../config';
+import { PROTOCOL } from '../config';
 import type { MeasurementResult, Reading } from '../types';
 import thresholds from './thresholds.json';
 
@@ -16,9 +16,9 @@ function usable(r: Reading | null): number | null {
 }
 
 /**
- * ESI-oriented triage suggestion from camera-only data. It can only raise
- * urgency: without a chief complaint the resource-based ESI 3–5 split is left
- * to the nurse, and poor data never yields a reassuring result.
+ * ESI-oriented triage suggestion from camera-only data. Escalations need a
+ * confident reading; without one the result is 'nurse' unless the face was
+ * barely seen or the video too choppy to judge at all.
  */
 export function triage(m: MeasurementResult): TriageLevel {
   const hr = usable(m.heartRate);
@@ -38,33 +38,25 @@ export function triage(m: MeasurementResult): TriageLevel {
     (rr !== null && rr > D.respirationAbove);
   if (highRisk) return 2;
 
-  const unreliable =
-    hr === null ||
-    m.quality.faceCoverage < Q.minFaceCoverage ||
-    m.quality.meanFps < Q.minFps ||
-    m.alertness.state === 'unknown';
+  const unreliable = m.quality.faceCoverage < Q.unclearFaceCoverage || m.quality.meanFps < Q.unclearFps;
   return unreliable ? 'unreliable' : 'nurse';
 }
 
 /**
- * Overall 0..1 trust in the current result. Capped by recording time so it
- * starts low and grows, then scaled by face coverage, frame rate and the
- * signal quality of the vital signs.
+ * Overall 0..1 trust in the current result. Capped by recording time (square
+ * root, so it rises quickly), then scaled by face coverage, frame rate and the
+ * signal quality of the vital signs, heart rate weighted most.
  */
 export function overallConfidence(m: MeasurementResult, elapsedMs: number): number {
-  const time = Math.min(1, elapsedMs / PROTOCOL.confidenceRampMs);
+  const time = Math.sqrt(Math.min(1, elapsedMs / PROTOCOL.confidenceRampMs));
   const video = Math.min(1, m.quality.faceCoverage) * Math.min(1, m.quality.meanFps / Q.minFps);
-  const signal = ((m.heartRate?.confidence ?? 0) + (m.respiration?.confidence ?? 0)) / 2;
-  return +(time * video * (0.4 + 0.6 * signal)).toFixed(2);
+  const signal = 0.7 * (m.heartRate?.confidence ?? 0) + 0.3 * (m.respiration?.confidence ?? 0);
+  return +(time * video * (0.6 + 0.4 * signal)).toFixed(2);
 }
 
-/**
- * Escalations are reported as soon as they are found; a reassuring 'routine'
- * needs the overall confidence to be high enough.
- */
-export function urgencyOf(level: TriageLevel, confidence: number): Urgency {
+export function urgencyOf(level: TriageLevel): Urgency {
   if (level === 1) return 'emergency';
   if (level === 2) return 'urgent';
-  if (level === 'nurse' && confidence >= MIN_CONFIDENCE_FOR_TRIAGE) return 'routine';
+  if (level === 'nurse') return 'routine';
   return null;
 }

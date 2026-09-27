@@ -22,7 +22,9 @@
     "smileAsymmetryPositive": 0.5
   },
   "quality": {
-    "minFaceCoverage": 0.7,
-    "minFps": 15
+    "_comment": "minFps gates the start of a measurement; below the unclear* values the result is 'Unclear' instead of 'Routine'.",
+    "minFps": 15,
+    "unclearFaceCoverage": 0.5,
+    "unclearFps": 10
   }
 }
