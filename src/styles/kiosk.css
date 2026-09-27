@@ -76,56 +76,8 @@
   color: var(--ok);
 }
 
-.progress {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.progress .track {
-  flex: 1;
-  height: 12px;
-  background: var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.progress .bar {
-  height: 100%;
-  background: var(--ok);
-  transition: width 0.2s linear;
-}
-
-.progress .time {
-  font-variant-numeric: tabular-nums;
-  font-size: 1.3rem;
-  min-width: 3.5em;
-  text-align: right;
-}
-
-.progress.live .time {
-  color: var(--ok);
-}
-
-.gaze-dot {
-  position: fixed;
-  top: 50%;
-  width: 56px;
-  height: 56px;
-  margin-top: -28px;
-  border-radius: 50%;
-  background: var(--warn);
-  box-shadow: 0 0 0 10px rgba(251, 191, 36, 0.25);
-  z-index: 10;
-}
-
-.gaze-dot.left {
-  left: 3%;
-}
-
-.gaze-dot.right {
-  right: 3%;
+.instruction.prompt {
+  color: var(--warn);
 }
 
 .summary {
@@ -135,7 +87,7 @@
   gap: 0.6rem;
 }
 
-.summary .level,
+.summary .headline,
 .summary .tile {
   display: flex;
   flex-direction: column;
@@ -144,16 +96,14 @@
   border-radius: 14px;
 }
 
-.summary .level {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: baseline;
+.summary .headline {
+  grid-column: span 2;
   color: #fff;
   transition: background 0.3s;
 }
 
-.summary .tile {
+.summary .tile,
+.summary .confidence {
   background: var(--panel);
   border: 1px solid var(--line);
 }
@@ -163,9 +113,10 @@
   font-size: 0.9rem;
 }
 
-.summary .level .name {
+.summary .headline .name,
+.summary .hint {
   color: rgba(255, 255, 255, 0.85);
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .summary .value {
@@ -175,8 +126,22 @@
   white-space: nowrap;
 }
 
-.summary .level .value {
+.summary .headline .value {
   font-size: 2.2rem;
+}
+
+.summary .meter {
+  height: 8px;
+  margin-top: 0.3rem;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.summary .meter div {
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.5s linear;
 }
 
 .summary small {
@@ -194,20 +159,32 @@
   color: var(--orange);
 }
 
-.level-1 {
+.urgency-emergency {
   background: var(--red);
 }
 
-.level-2 {
+.urgency-urgent {
   background: var(--orange);
 }
 
-.level-3 {
+.urgency-routine {
   background: var(--blue);
 }
 
-.level-pending {
+.urgency-pending {
   background: var(--grey);
+}
+
+.summary .debug {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--muted);
+  background: #000;
+  border-radius: 8px;
 }
 
 .disclaimer {

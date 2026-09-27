@@ -1,4 +1,4 @@
-const ESI = { 1: 'ESI 1', 2: 'ESI 2', '3-5': 'ESI 3–5' };
+const URGENCY = { emergency: 'Emergency', urgent: 'Urgent', routine: 'Routine' };
 
 function ago(ms) {
   const s = Math.round((Date.now() - ms) / 1000);
@@ -14,7 +14,8 @@ export default function PatientCard({ patient }) {
         <span className="badge">{priority.level}</span>
       </header>
       <dl>
-        <div><dt>Triage</dt><dd>{ESI[vitals.esi] ?? '—'}</dd></div>
+        <div><dt>Urgency</dt><dd>{URGENCY[vitals.urgency] ?? '—'}</dd></div>
+        <div><dt>Confidence</dt><dd>{Math.round(vitals.confidence * 100)}%</dd></div>
         <div><dt>HR</dt><dd>{vitals.hr ?? '—'}</dd></div>
         <div><dt>RR</dt><dd>{vitals.rr ?? '—'}</dd></div>
       </dl>

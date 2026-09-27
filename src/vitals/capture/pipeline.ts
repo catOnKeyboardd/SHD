@@ -2,12 +2,12 @@ import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { PROTOCOL } from '../config';
 import { assessAlertness } from '../observe/alertness';
 import { assessFacialDroop } from '../observe/facialDroop';
-import type { FaceObservation } from '../observe/frames';
+import { inRange, type FaceObservation } from '../observe/frames';
 import { assessPain } from '../observe/pain';
 import type { TimedValue } from '../signals/dsp';
 import { estimateHeartRate } from '../signals/heartRate';
 import { estimateRespiration } from '../signals/respiration';
-import type { MeasurementResult, RoiFrame } from '../types';
+import type { FacialDroopResult, MeasurementResult, Reading, RoiFrame } from '../types';
 import type { Landmarkers } from '../vision/landmarkers';
 import thresholds from '../triage/thresholds.json';
 import { roiPixelPolygons, sampleRois } from './roi';
@@ -26,12 +26,14 @@ export interface FrameInfo {
   gate: GateStatus;
   recording: boolean;
   elapsedMs: number;
+  /** Prompt the patient should be following right now. */
+  prompt: 'smile' | null;
 }
 
 interface FrameRecord {
   t: number;
   face: boolean;
-  /** Frame belongs to a passive (no prompt) period: first-cycle rest or continuous monitoring. */
+  /** No prompt was running during this frame. */
   passive: boolean;
   moving: boolean;
   brightnessJump: boolean;
@@ -55,18 +57,27 @@ function dropRange<T extends { t: number }>(arr: T[], from: number, to: number):
   while (i1 < arr.length && arr[i1].t < to) i1++;
   if (i1 > i0) arr.splice(i0, i1 - i0);
 }
+interface SmileCheck {
+  attempts: number;
+  /** Elapsed time at which the next prompt may start. */
+  nextAt: number;
+  /** Elapsed time the running prompt started, or null when none is running. */
+  promptStart: number | null;
+  result: FacialDroopResult | null;
+}
+
 /**
  * Per-frame processing loop: runs the landmarkers, evaluates the positioning
  * gate and, while recording, accumulates the raw traces the estimators need.
  *
- * The first `PROTOCOL.totalMs` is the prompted cycle (rest, gaze, smile).
- * Recording then continues indefinitely: vitals, eye closure and pain are
- * recomputed over the latest window, while the gaze and smile results keep
- * coming from the prompted cycle.
+ * Recording is continuous: vitals, eye closure and pain are recomputed over
+ * the latest `PROTOCOL.windowMs`. Once enough resting data exists the patient
+ * is asked to smile; the prompt repeats until the smile can be assessed or
+ * `PROTOCOL.smileMaxAttempts` is reached.
  */
 export class Pipeline {
   onFrame: (info: FrameInfo) => void = () => {};
-  /** Result from the data recorded so far, emitted every `PROTOCOL.liveIntervalMs`. */
+  /** Result from the latest window, emitted every `PROTOCOL.liveIntervalMs`. */
   onResult: (result: MeasurementResult, elapsedMs: number) => void = () => {};
   /** Face lost long enough to assume the patient left; recording has stopped. */
   onPatientLeft: () => void = () => {};
@@ -83,8 +94,13 @@ export class Pipeline {
   private recording = false;
   private startT = 0;
   private lastResultT = 0;
-  private cycleResult: MeasurementResult | null = null;
+  private lastResult: MeasurementResult | null = null;
   private lastFaceT = 0;
+  private smile: SmileCheck = { attempts: 0, nextAt: 0, promptStart: null, result: null };
+  /** Start of the uninterrupted passive stretch the vitals are computed from. */
+  private vitalsStart = 0;
+  /** Vitals from before the last prompt, shown until the new stretch is long enough. */
+  private held: { heartRate: Reading | null; respiration: Reading | null; until: number } | null = null;
   private roiFrames: RoiFrame[] = [];
   private faceObs: FaceObservation[] = [];
   private shoulderY: TimedValue[] = [];
@@ -120,7 +136,10 @@ export class Pipeline {
     this.lastNose = null;
     this.lastLum = null;
     this.lastResultT = 0;
-    this.cycleResult = null;
+    this.lastResult = null;
+    this.smile = { attempts: 0, nextAt: PROTOCOL.smileFirstPromptMs, promptStart: null, result: null };
+    this.vitalsStart = 0;
+    this.held = null;
     this.startT = performance.now();
     this.lastFaceT = this.startT;
     this.recording = true;
@@ -224,39 +243,61 @@ export class Pipeline {
         this.onPatientLeft();
         return;
       }
+      this.updateSmilePrompt(elapsed, !!face);
       this.record(elapsed, face, blend, rois, iod, eyeL, eyeR, px, sh, poseRan, w, h);
       this.prune(elapsed);
     }
 
     this.draw(face, sh, w, h, gate.ok);
-    this.onFrame({ gate, recording: this.recording, elapsedMs: elapsed });
+    const prompt = this.recording && this.smile.promptStart !== null ? 'smile' : null;
+    this.onFrame({ gate, recording: this.recording, elapsedMs: elapsed, prompt });
     if (this.recording) this.maybeEmit(elapsed);
   }
 
-  private maybeEmit(elapsed: number): void {
-    const { totalMs, liveIntervalMs, minMonitorWindowMs } = PROTOCOL;
-    if (this.lastResultT < totalMs && elapsed >= totalMs) {
-      // End of the prompted cycle: emit it exactly, before switching to the rolling window.
-      this.lastResultT = elapsed;
-      this.cycleResult = this.snapshot(totalMs);
-      this.onResult(this.cycleResult, elapsed);
+  /** Starts a smile prompt when due, and scores it once it has run its course. */
+  private updateSmilePrompt(elapsed: number, face: boolean): void {
+    const s = this.smile;
+    if (s.promptStart === null) {
+      const due = !s.result?.assessable && s.attempts < PROTOCOL.smileMaxAttempts && elapsed >= s.nextAt;
+      if (due && face) {
+        s.promptStart = elapsed;
+        s.attempts++;
+      }
       return;
     }
-    if (elapsed - this.lastResultT < liveIntervalMs) return;
-    this.lastResultT = elapsed;
-    // Repeat the prompted-cycle result until the rolling window has enough data.
-    const holding = elapsed > totalMs && elapsed - totalMs < minMonitorWindowMs && this.cycleResult;
-    this.onResult(holding || this.snapshot(elapsed), elapsed);
+    const start = s.promptStart;
+    if (elapsed - start < PROTOCOL.smilePromptMs) return;
+
+    const rest = this.faceObs.filter((o) => o.passive && inRange(o, [start - PROTOCOL.smileFirstPromptMs, start]));
+    const smiling = this.faceObs.filter((o) =>
+      inRange(o, [start + PROTOCOL.smileSettleMs, start + PROTOCOL.smilePromptMs]),
+    );
+    s.result = assessFacialDroop(rest, smiling);
+    s.promptStart = null;
+    s.nextAt = elapsed + PROTOCOL.smileRetryMs;
+
+    this.vitalsStart = elapsed;
+    this.held = this.lastResult && {
+      heartRate: this.lastResult.heartRate,
+      respiration: this.lastResult.respiration,
+      until: elapsed + PROTOCOL.windowMs,
+    };
   }
 
-  /** Keep only the rolling window, plus the prompted-cycle face observations (gaze, smile baseline). */
+  private maybeEmit(elapsed: number): void {
+    if (elapsed - this.lastResultT < PROTOCOL.liveIntervalMs) return;
+    this.lastResultT = elapsed;
+    this.lastResult = this.snapshot(elapsed);
+    this.onResult(this.lastResult, elapsed);
+  }
+
+  /** Keep only the rolling window. */
   private prune(elapsed: number): void {
-    const cutoff = elapsed - PROTOCOL.totalMs;
+    const cutoff = elapsed - PROTOCOL.windowMs;
     if (cutoff <= 0) return;
-    for (const arr of [this.roiFrames, this.shoulderY, this.foreheadLum, this.frameLog]) {
+    for (const arr of [this.roiFrames, this.shoulderY, this.foreheadLum, this.frameLog, this.faceObs]) {
       dropRange(arr as { t: number }[], -Infinity, cutoff);
     }
-    dropRange(this.faceObs, PROTOCOL.totalMs, cutoff);
   }
 
   private record(
@@ -273,11 +314,11 @@ export class Pipeline {
     w: number,
     h: number,
   ): void {
-    const passive = t < PROTOCOL.restMs || t >= PROTOCOL.totalMs;
+    const passive = this.smile.promptStart === null;
     const rec: FrameRecord = { t, face: false, passive, moving: false, brightnessJump: false };
     this.frameLog.push(rec);
 
-    if (poseRan && sh) {
+    if (poseRan && sh && passive) {
       const width = Math.abs(sh.l.x - sh.r.x) * w;
       if (width > 1) this.shoulderY.push({ t, v: (((sh.l.y + sh.r.y) / 2) * h) / width });
     }
@@ -310,44 +351,66 @@ export class Pipeline {
     const angle = Math.atan2(eyeR.y - eyeL.y, eyeR.x - eyeL.x);
     const centre = mid(eyeL, eyeR);
     const alignedY = (p: Pt) => (-Math.sin(angle) * (p.x - centre.x) + Math.cos(angle) * (p.y - centre.y)) / iod;
-    this.faceObs.push({ t, blend, cornerA: alignedY(px(61)), cornerB: alignedY(px(291)) });
+    this.faceObs.push({ t, blend, cornerA: alignedY(px(61)), cornerB: alignedY(px(291)), passive });
   }
 
-  /**
-   * Result for the data up to `elapsedMs`. During the prompted cycle this uses
-   * everything recorded so far; afterwards the latest `PROTOCOL.totalMs` of
-   * monitoring data.
-   */
+  /** Result for the latest `PROTOCOL.windowMs` (arrays are already pruned to it). */
   private snapshot(elapsedMs: number): MeasurementResult {
-    const monitoring = elapsedMs > PROTOCOL.totalMs;
-    const start = monitoring ? Math.max(PROTOCOL.totalMs, elapsedMs - PROTOCOL.totalMs) : 0;
-    const end = monitoring ? elapsedMs : PROTOCOL.totalMs;
-    const restRange: [number, number] = monitoring ? [start, Infinity] : [0, PROTOCOL.restMs];
+    const vitalsFrom = Math.max(elapsedMs - PROTOCOL.windowMs, this.vitalsStart);
+    const sinceVitalsStart = <T extends { t: number }>(arr: T[]) => arr.filter((x) => x.t >= vitalsFrom);
 
-    const inWindow = <T extends { t: number }>(arr: T[]) => arr.filter((x) => x.t >= start && x.t < end);
-    const frames = inWindow(this.frameLog);
+    const frames = this.frameLog;
     const passive = frames.filter((f) => f.passive);
-    const passiveFace = passive.filter((f) => f.face);
+    const vitalsFrames = sinceVitalsStart(passive).filter((f) => f.face);
     const faceFrames = frames.filter((f) => f.face).length;
 
-    const motionScore = passiveFace.length ? passiveFace.filter((f) => f.moving).length / passiveFace.length : 1;
-    const brightnessJumps = passive.filter((f) => f.brightnessJump).length;
+    const motionScore = vitalsFrames.length ? vitalsFrames.filter((f) => f.moving).length / vitalsFrames.length : 1;
+    const brightnessJumps = vitalsFrames.filter((f) => f.brightnessJump).length;
     const qualityFactor = Math.max(
       0.3,
       1 - Math.max(0, motionScore - 0.15) * 1.5 - Math.min(0.3, brightnessJumps * 0.05),
     );
-    const spanMs = Math.min(elapsedMs, end) - start;
+    const spanMs = Math.min(elapsedMs, PROTOCOL.windowMs);
+
+    const held = this.held && elapsedMs < this.held.until ? this.held : null;
+    const heartRate = estimateHeartRate(sinceVitalsStart(this.roiFrames), qualityFactor) ?? held?.heartRate ?? null;
+    const respiration =
+      estimateRespiration(sinceVitalsStart(this.shoulderY), sinceVitalsStart(this.foreheadLum), qualityFactor) ??
+      held?.respiration ??
+      null;
+
+    const rest = this.faceObs.filter((o) => o.passive);
+    const warmingUp = { reason: 'collecting data', frames: rest.length };
+    const observing = elapsedMs >= PROTOCOL.minObservationMs;
 
     return {
-      heartRate: estimateHeartRate(inWindow(this.roiFrames), qualityFactor),
-      respiration: estimateRespiration(inWindow(this.shoulderY), inWindow(this.foreheadLum), qualityFactor),
-      alertness: assessAlertness(this.faceObs, passive.length, restRange),
-      pain: assessPain(this.faceObs, restRange),
-      facialDroop: assessFacialDroop(this.faceObs),
+      heartRate,
+      respiration,
+      alertness: observing ? assessAlertness(rest, passive.length) : { state: 'unknown', debug: warmingUp },
+      pain: observing ? assessPain(rest) : { severe: false, assessable: false, debug: warmingUp },
+      facialDroop: this.facialDroopStatus(),
       quality: {
         faceCoverage: frames.length ? faceFrames / frames.length : 0,
         meanFps: spanMs > 0 ? frames.length / (spanMs / 1000) : 0,
       },
+    };
+  }
+
+  private facialDroopStatus(): FacialDroopResult {
+    const s = this.smile;
+    if (s.result?.assessable) return { ...s.result, debug: { ...s.result.debug, attempts: s.attempts } };
+    const reason =
+      s.promptStart !== null
+        ? 'smile prompt running'
+        : s.attempts === 0
+          ? 'waiting for first prompt'
+          : s.attempts >= PROTOCOL.smileMaxAttempts
+            ? `gave up: ${s.result?.debug.reason}`
+            : `retrying: ${s.result?.debug.reason}`;
+    return {
+      positive: false,
+      assessable: false,
+      debug: { ...s.result?.debug, reason, attempts: s.attempts },
     };
   }
 

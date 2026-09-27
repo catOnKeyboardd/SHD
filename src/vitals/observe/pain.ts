@@ -1,11 +1,11 @@
-import { PROTOCOL } from '../config';
 import thresholds from '../triage/thresholds.json';
 import type { PainResult } from '../types';
 import { median } from '../signals/dsp';
-import { eyesClosed } from './alertness';
-import { avg, inRange, type FaceObservation } from './frames';
+import { blinkScore, eyesClosed } from './alertness';
+import { avg, type FaceObservation } from './frames';
 
 const T = thresholds.observation;
+const round = (x: number) => +x.toFixed(2);
 
 /**
  * Approximation of the Prkachin–Solomon Pain Intensity action units from
@@ -13,21 +13,38 @@ const T = thresholds.observation;
  * levator contraction (AU9/10). Eye closure (AU43) is left to the alertness
  * module so a sleeping patient is not scored as being in pain.
  */
-function painScore(o: FaceObservation): number {
-  const au4 = avg(o, 'browDownLeft', 'browDownRight');
-  const au67 = Math.max(avg(o, 'cheekSquintLeft', 'cheekSquintRight'), avg(o, 'eyeSquintLeft', 'eyeSquintRight'));
-  const au910 = Math.max(avg(o, 'noseSneerLeft', 'noseSneerRight'), avg(o, 'mouthUpperUpLeft', 'mouthUpperUpRight'));
-  return au4 + au67 + au910;
+function actionUnits(o: FaceObservation) {
+  return {
+    au4: avg(o, 'browDownLeft', 'browDownRight'),
+    au67: Math.max(avg(o, 'cheekSquintLeft', 'cheekSquintRight'), avg(o, 'eyeSquintLeft', 'eyeSquintRight')),
+    au910: Math.max(avg(o, 'noseSneerLeft', 'noseSneerRight'), avg(o, 'mouthUpperUpLeft', 'mouthUpperUpRight')),
+  };
 }
 
-export function assessPain(
-  obs: FaceObservation[],
-  restRange: readonly [number, number] = [0, PROTOCOL.restMs],
-): PainResult {
-  const rest = obs.filter((o) => inRange(o, restRange));
+/** Pain expression over passive (unprompted) frames. */
+export function assessPain(rest: FaceObservation[]): PainResult {
   const open = rest.filter((o) => !eyesClosed(o));
-  if (!rest.length || open.length / rest.length < T.painMinOpenEyeShare || open.length < 20) {
-    return { severe: false, assessable: false };
+  const openShare = rest.length ? open.length / rest.length : 0;
+  const debug = {
+    frames: rest.length,
+    blendshapes: rest.length ? Object.keys(rest[rest.length - 1].blend).length : 0,
+    openShare: round(openShare),
+    blinkMedian: rest.length ? round(median(rest.map(blinkScore))) : null,
+  };
+  if (rest.length && openShare < T.painMinOpenEyeShare) {
+    return { severe: false, assessable: false, debug: { reason: 'eyes judged closed', ...debug } };
   }
-  return { severe: median(open.map(painScore)) >= T.painSevereScore, assessable: true };
+  if (open.length < 20) {
+    return { severe: false, assessable: false, debug: { reason: 'too few face frames', ...debug } };
+  }
+  const aus = open.map(actionUnits);
+  const au4 = median(aus.map((a) => a.au4));
+  const au67 = median(aus.map((a) => a.au67));
+  const au910 = median(aus.map((a) => a.au910));
+  const score = median(aus.map((a) => a.au4 + a.au67 + a.au910));
+  return {
+    severe: score >= T.painSevereScore,
+    assessable: true,
+    debug: { ...debug, score: round(score), au4: round(au4), au67: round(au67), au910: round(au910) },
+  };
 }

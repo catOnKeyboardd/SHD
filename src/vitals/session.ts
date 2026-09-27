@@ -2,12 +2,11 @@ import { lockExposure, startCamera, stopStream } from './capture/camera';
 import { Pipeline, type FrameInfo, type GateStatus } from './capture/pipeline';
 import { PROTOCOL } from './config';
 import { speak, stopSpeaking } from './speech';
-import thresholds from './triage/thresholds.json';
-import { triage } from './triage/engine';
-import type { MeasurementResult } from './types';
+import { overallConfidence, triage, urgencyOf, type Urgency } from './triage/engine';
+import type { Diagnostics, MeasurementResult } from './types';
 import { loadLandmarkers } from './vision/landmarkers';
 
-type MeasurePhase = 'rest' | 'gazeLeft' | 'gazeRight' | 'smile' | 'monitor';
+type MeasurePhase = 'monitor' | 'smile';
 export type ScanPhase = 'loading' | 'error' | 'positioning' | MeasurePhase;
 
 export type CheckKey = 'face' | 'distance' | 'centered' | 'shoulders' | 'lighting' | 'smooth';
@@ -17,10 +16,6 @@ export interface ScanStatus {
   phase: ScanPhase;
   instruction: string;
   checks: Record<CheckKey, boolean>;
-  /** 0..1 through the prompted cycle; 1 while monitoring. */
-  progress: number;
-  secondsLeft: number;
-  gaze: 'left' | 'right' | null;
 }
 
 /**
@@ -34,14 +29,17 @@ export interface VitalsUpdate {
   hrv: null;
   stress: null;
   bp: null;
-  quality: 'good' | 'poor';
-  /** Camera-only ESI suggestion; null while pending or when data is unreliable. */
-  esi: 1 | 2 | '3-5' | null;
+  /** 0..1 trust in this update; starts low and grows with recording time and signal quality. */
+  confidence: number;
+  /** Camera-only triage suggestion; null while still checking or when data is unreliable. */
+  urgency: Urgency;
   consciousness: 'alert' | 'reduced' | 'unresponsive' | null;
   pain: 'none' | 'severe' | null;
   facialDroop: 'symmetric' | 'asymmetric' | null;
-  /** The prompted 20 s cycle is finished; later updates use the latest 20 s. */
-  complete: boolean;
+  /** Recording has run for the full confidence ramp; a null urgency now means unreliable data. */
+  settled: boolean;
+  /** Numbers behind consciousness, pain and smile, for troubleshooting. */
+  debug: { consciousness: Diagnostics; pain: Diagnostics; smile: Diagnostics };
 }
 
 export interface ScanOptions {
@@ -53,20 +51,9 @@ export interface ScanOptions {
 }
 
 const PHASE_TEXT: Record<MeasurePhase, string> = {
-  rest: 'Hold still, breathe normally, look at the screen',
-  gazeLeft: 'Keep your head still — look at the dot on the left',
-  gazeRight: 'Now look at the dot on the right',
+  monitor: 'Hold still, breathe normally, look at the screen',
   smile: 'Smile showing your teeth, and hold it',
-  monitor: 'Monitoring — relax and breathe normally',
 };
-
-function phaseAt(elapsed: number): MeasurePhase {
-  if (elapsed < PROTOCOL.restMs) return 'rest';
-  if (elapsed < PROTOCOL.gazeLeftMs[1]) return 'gazeLeft';
-  if (elapsed < PROTOCOL.gazeRightMs[1]) return 'gazeRight';
-  if (elapsed < PROTOCOL.totalMs) return 'smile';
-  return 'monitor';
-}
 
 function gateMessage(g: GateStatus): string {
   if (!g.face) return 'Please face the screen';
@@ -92,34 +79,29 @@ function checksOf(g: GateStatus): Record<CheckKey, boolean> {
 }
 
 function toUpdate(m: MeasurementResult, elapsedMs: number, sessionId: number): VitalsUpdate {
-  const level = triage(m);
-  const complete = elapsedMs >= PROTOCOL.totalMs;
-  // During the prompted cycle only escalations are reported; reassuring states wait for all checks.
-  const esi = level === 1 || level === 2 ? level : complete && level === 'nurse' ? '3-5' : null;
-  const gazeDone = complete || elapsedMs >= PROTOCOL.gazeRightMs[1];
+  const confidence = overallConfidence(m, elapsedMs);
   const state = m.alertness.state;
-  const hr = m.heartRate?.usable ? m.heartRate.value : null;
-  const Q = thresholds.quality;
   return {
     sessionId,
-    hr,
+    hr: m.heartRate?.usable ? m.heartRate.value : null,
     rr: m.respiration?.usable ? m.respiration.value : null,
     hrv: null,
     stress: null,
     bp: null,
-    quality: hr !== null && m.quality.faceCoverage >= Q.minFaceCoverage && m.quality.meanFps >= Q.minFps ? 'good' : 'poor',
-    esi,
-    consciousness: state === 'unknown' || (state === 'alert' && !gazeDone) ? null : state,
+    confidence,
+    urgency: urgencyOf(triage(m), confidence),
+    consciousness: state === 'unknown' ? null : state,
     pain: m.pain.assessable ? (m.pain.severe ? 'severe' : 'none') : null,
     facialDroop: m.facialDroop.assessable ? (m.facialDroop.positive ? 'asymmetric' : 'symmetric') : null,
-    complete,
+    settled: elapsedMs >= PROTOCOL.confidenceRampMs,
+    debug: { consciousness: m.alertness.debug, pain: m.pain.debug, smile: m.facialDroop.debug },
   };
 }
 
 /**
- * Runs the camera scan: positioning gate, 20 s prompted cycle (rest, gaze,
- * smile), then continuous monitoring over the latest 20 s. A new session
- * starts automatically when the patient leaves and the next one sits down.
+ * Runs the camera scan: positioning gate, then continuous monitoring over the
+ * latest 20 s with an on-demand smile prompt. A new session starts
+ * automatically when the patient leaves and the next one sits down.
  * Returns stop().
  */
 export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} }: ScanOptions): () => void {
@@ -134,9 +116,6 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
     phase,
     instruction: 'Loading…',
     checks: { face: false, distance: false, centered: false, shoulders: false, lighting: false, smooth: false },
-    progress: 0,
-    secondsLeft: PROTOCOL.totalMs / 1000,
-    gaze: null,
   };
   const emit = (patch: Partial<ScanStatus>) => {
     Object.assign(status, patch, { phase });
@@ -157,28 +136,22 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
       return;
     }
 
-    const next = phaseAt(info.elapsedMs);
+    const next: MeasurePhase = info.prompt ?? 'monitor';
     if (next !== phase) {
       phase = next;
-      speak(next === 'monitor' ? 'Check complete. Monitoring continues.' : PHASE_TEXT[next]);
+      speak(next === 'smile' ? PHASE_TEXT.smile : 'Thank you. You can relax now.');
     }
-    const monitoring = next === 'monitor';
-    emit({
-      instruction: info.gate.face ? PHASE_TEXT[next] : 'Please look back at the screen',
-      progress: monitoring ? 1 : info.elapsedMs / PROTOCOL.totalMs,
-      secondsLeft: monitoring ? 0 : Math.max(0, Math.ceil((PROTOCOL.totalMs - info.elapsedMs) / 1000)),
-      gaze: next === 'gazeLeft' ? 'left' : next === 'gazeRight' ? 'right' : null,
-    });
+    emit({ instruction: info.gate.face ? PHASE_TEXT[next] : 'Please look back at the screen' });
   }
 
   function beginMeasurement(): void {
     if (!pipeline) return;
     sessionId++;
-    phase = 'rest';
-    speak(PHASE_TEXT.rest);
+    phase = 'monitor';
+    speak(PHASE_TEXT.monitor);
     if (stream) void lockExposure(stream);
     pipeline.beginRecording();
-    emit({ instruction: PHASE_TEXT.rest, progress: 0, secondsLeft: PROTOCOL.totalMs / 1000 });
+    emit({ instruction: PHASE_TEXT.monitor });
   }
 
   function toPositioning(): void {
@@ -186,7 +159,7 @@ export function startVitalsScan({ video, overlay, onVitals, onStatus = () => {} 
     gateSince = null;
     stopSpeaking();
     onVitals(null);
-    emit({ instruction: 'Please sit facing the screen', progress: 0, gaze: null });
+    emit({ instruction: 'Please sit facing the screen' });
   }
 
   function teardown(): void {

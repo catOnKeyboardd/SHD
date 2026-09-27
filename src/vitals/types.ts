@@ -16,19 +16,24 @@ export interface Reading {
   usable: boolean;
 }
 
+/** Why an observation came out the way it did: a `reason` when not assessable, plus the numbers behind it. */
+export type Diagnostics = Record<string, string | number | null>;
+
 export interface AlertnessResult {
   state: 'alert' | 'reduced' | 'unresponsive' | 'unknown';
-  followedGaze: boolean | null;
+  debug: Diagnostics;
 }
 
 export interface PainResult {
   severe: boolean;
   assessable: boolean;
+  debug: Diagnostics;
 }
 
 export interface FacialDroopResult {
   positive: boolean;
   assessable: boolean;
+  debug: Diagnostics;
 }
 
 export interface MeasurementResult {

@@ -1,4 +1,4 @@
-// Owner: vitals. Camera preview, positioning checks, progress and the gaze-test dot.
+// Owner: vitals. Camera preview, prompts and positioning checks.
 // The scan starts on mount and keeps monitoring until unmount.
 import { useEffect, useRef, useState } from 'react';
 import { startScan } from '../../lib/vitals.js';
@@ -17,7 +17,7 @@ export default function ScanView({ onVitals = () => {} }) {
   const overlayRef = useRef(null);
   const onVitalsRef = useRef(onVitals);
   onVitalsRef.current = onVitals;
-  const [status, setStatus] = useState({ phase: 'loading', instruction: 'Loading…', checks: {}, progress: 0 });
+  const [status, setStatus] = useState({ phase: 'loading', instruction: 'Loading…', checks: {} });
 
   useEffect(
     () =>
@@ -29,15 +29,12 @@ export default function ScanView({ onVitals = () => {} }) {
     [],
   );
 
-  const measuring = !['loading', 'error', 'positioning'].includes(status.phase);
-  const live = status.phase === 'monitor';
-
   return (
     <section className="scan">
       <div className="stage">
         <video ref={videoRef} playsInline muted autoPlay />
         <canvas ref={overlayRef} />
-        <div className="instruction">{status.instruction}</div>
+        <div className={`instruction${status.phase === 'smile' ? ' prompt' : ''}`}>{status.instruction}</div>
       </div>
 
       {status.phase === 'positioning' && (
@@ -49,17 +46,6 @@ export default function ScanView({ onVitals = () => {} }) {
           ))}
         </ul>
       )}
-
-      {measuring && (
-        <div className={`progress${live ? ' live' : ''}`}>
-          <div className="track">
-            <div className="bar" style={{ width: `${status.progress * 100}%` }} />
-          </div>
-          <span className="time">{live ? '● Live' : `${status.secondsLeft} s`}</span>
-        </div>
-      )}
-
-      {status.gaze && <div className={`gaze-dot ${status.gaze}`} />}
     </section>
   );
 }
